@@ -11,6 +11,11 @@ from src.apis.jira_client import JiraClient, JiraConfig
 from src.apis.sippy_client import SippyClient
 from src.apis.github_client import GitHubClient
 from src.agents.control_plane_agent import ControlPlaneAgent
+from src.agents.upgrade_lifecycle_agent import UpgradeLifecycleAgent
+from src.agents.node_machine_agent import NodeMachineAgent
+from src.agents.networking_agent import NetworkingAgent
+from src.agents.storage_agent import StorageAgent
+from src.agents.operators_platform_agent import OperatorsPlatformAgent
 from src.coordinator.orchestrator import deduplicate_gaps, format_approval_queue, format_summary
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.scenario_index import index_scenarios_from_repo
@@ -21,11 +26,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+AGENT_CLASSES = {
+    "control_plane": ControlPlaneAgent,
+    "upgrade_lifecycle": UpgradeLifecycleAgent,
+    "node_machine": NodeMachineAgent,
+    "networking": NetworkingAgent,
+    "storage": StorageAgent,
+    "operators_platform": OperatorsPlatformAgent,
+}
+
 
 def main():
     parser = argparse.ArgumentParser(description="krkn-chaos-coordinator")
     parser.add_argument("--release", default="4.21", help="OCP release to analyze")
-    parser.add_argument("--agent", default=None, help="Run a single agent (e.g., control_plane)")
+    parser.add_argument(
+        "--agent", default=None,
+        help=f"Run a single agent ({', '.join(AGENT_CLASSES.keys())}). Default: all.",
+    )
     parser.add_argument(
         "--krkn-repo", default=str(Path.home() / "krkn"), help="Path to local krkn repo"
     )
@@ -61,9 +78,13 @@ def main():
         "release": args.release,
     }
 
-    agents_to_run = []
-    if args.agent == "control_plane" or args.agent is None:
-        agents_to_run.append(ControlPlaneAgent(**agent_kwargs))
+    if args.agent:
+        if args.agent not in AGENT_CLASSES:
+            print(f"Unknown agent: {args.agent}. Available: {', '.join(AGENT_CLASSES.keys())}")
+            return
+        agents_to_run = [AGENT_CLASSES[args.agent](**agent_kwargs)]
+    else:
+        agents_to_run = [cls(**agent_kwargs) for cls in AGENT_CLASSES.values()]
 
     # Run agents
     results = []

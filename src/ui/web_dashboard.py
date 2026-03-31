@@ -531,7 +531,15 @@ with st.sidebar:
     st.markdown("### ⚙ Configuration")
     release = st.text_input("OCP Release", value="4.21")
     krkn_path = st.text_input("krkn repo", value="/Users/sahil/krkn")
-    jira_path = st.text_input("JIRA data", value="tests/fixtures/jira_etcd_bugs.json")
+    data_source = st.radio("Data Source", ["JIRA (saved JSON)", "JIRA (live query)"], index=0)
+    jira_path = st.text_input("JIRA data file", value="tests/fixtures/jira_etcd_bugs.json",
+                               disabled=(data_source != "JIRA (saved JSON)"))
+    selected_agents = st.multiselect(
+        "Agents to run",
+        get_all_agents(),
+        default=["control_plane"],
+        format_func=lambda x: x.replace("_", " ").title(),
+    )
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
@@ -539,8 +547,7 @@ with st.sidebar:
     for agent in get_all_agents():
         display = agent.replace("_", " ").title()
         components = AGENT_COMPONENTS.get(agent, [])
-        status = "active" if agent == "control_plane" else "idle"
-        dot = f'<span class="status-dot {status}"></span>'
+        status = "active" if agent in selected_agents else "idle"
         with st.expander(f"{display} ({len(components)})"):
             for c in components:
                 st.markdown(f"`{c}`")
@@ -552,11 +559,34 @@ with st.sidebar:
 if run_button or st.session_state.get("has_run"):
     st.session_state["has_run"] = True
 
-    if not Path(jira_path).exists():
+    if data_source == "JIRA (live query)":
+        # Live query using JIRA REST API
+        from src.apis.jira_client import JiraClient, JiraConfig
+        token = os.environ.get("JIRA_API_TOKEN", "")
+        username = os.environ.get("JIRA_USERNAME", "")
+        if not token or not username:
+            st.error("Set JIRA_API_TOKEN and JIRA_USERNAME env vars for live queries")
+            st.stop()
+        jira = JiraClient(JiraConfig(
+            url="https://redhat.atlassian.net", username=username, api_token=token,
+        ))
+        all_bugs = []
+        for agent_name in selected_agents:
+            components = AGENT_COMPONENTS.get(agent_name, [])
+            agent_bugs = jira.get_bugs_by_components(components, days=14, max_results=20)
+            all_bugs.extend(agent_bugs)
+        # Deduplicate by key
+        seen = set()
+        bugs = []
+        for b in all_bugs:
+            if b.key not in seen:
+                bugs.append(b)
+                seen.add(b.key)
+    elif not Path(jira_path).exists():
         st.error(f"Data file not found: {jira_path}")
         st.stop()
-
-    bugs = load_bugs_from_json(jira_path)
+    else:
+        bugs = load_bugs_from_json(jira_path)
 
     with st.status("Executing pipeline...", expanded=True) as status:
         st.write(f"`DISCOVER` Loading {len(bugs)} bugs...")
