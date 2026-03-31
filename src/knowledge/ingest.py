@@ -1,0 +1,447 @@
+"""Ingest krkn and OCP documentation into ChromaDB from GitHub repos."""
+
+import logging
+import re
+from pathlib import Path
+
+import yaml
+
+from src.apis.github_client import GitHubClient
+from src.knowledge.chromadb_store import ChromaStore, DocChunk
+
+logger = logging.getLogger(__name__)
+
+# Repos to ingest
+KRKN_REPOS = {
+    "scenarios": {"owner": "krkn-chaos", "repo": "krkn", "path": "scenarios"},
+    "website_docs": {"owner": "krkn-chaos", "repo": "website", "path": "content/en/docs"},
+    "krkn_hub_docs": {"owner": "krkn-chaos", "repo": "krkn-hub", "path": "docs"},
+    "krkn_plugins": {"owner": "krkn-chaos", "repo": "krkn", "path": "krkn/scenario_plugins"},
+}
+
+# Max chunk size for ChromaDB (chars)
+MAX_CHUNK_SIZE = 1500
+
+
+def _clean_markdown(text: str) -> str:
+    """Strip Hugo shortcodes, frontmatter, and excessive whitespace."""
+    # Remove YAML frontmatter
+    text = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.DOTALL)
+    # Remove Hugo shortcodes like {{< tab >}}, {{% alert %}}
+    text = re.sub(r"\{\{[<%].*?[%>]\}\}", "", text)
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Collapse whitespace
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _infer_component(path: str, content: str) -> str:
+    """Infer the OCP component from file path and content."""
+    path_lower = path.lower()
+    content_lower = content[:500].lower()
+
+    component_map = {
+        "etcd": "etcd",
+        "node-scenario": "node",
+        "node_scenario": "node",
+        "node_action": "node",
+        "pod-scenario": "pod",
+        "pod_disruption": "pod",
+        "network-chaos": "network",
+        "network_chaos": "network",
+        "cpu-hog": "cpu_hog",
+        "memory-hog": "memory_hog",
+        "io-hog": "io_hog",
+        "pvc": "storage",
+        "zone-outage": "zone_outage",
+        "zone_outage": "zone_outage",
+        "application-outage": "application",
+        "application_outage": "application",
+        "service-disruption": "service",
+        "service_disruption": "service",
+        "service-hijacking": "service",
+        "service_hijacking": "service",
+        "container": "container",
+        "time-scenario": "time",
+        "time_action": "time",
+        "power-outage": "power",
+        "shut_down": "power",
+        "syn-flood": "syn_flood",
+        "syn_flood": "syn_flood",
+        "http-load": "http_load",
+        "http_load": "http_load",
+        "kubevirt": "kubevirt",
+        "managed-cluster": "managed_cluster",
+    }
+
+    for keyword, component in component_map.items():
+        if keyword in path_lower or keyword in content_lower:
+            return component
+
+    return "general"
+
+
+def _chunk_text(text: str, max_size: int = MAX_CHUNK_SIZE) -> list[str]:
+    """Split text into chunks, preferring paragraph boundaries."""
+    if len(text) <= max_size:
+        return [text]
+
+    chunks = []
+    paragraphs = text.split("\n\n")
+    current_chunk = ""
+
+    for para in paragraphs:
+        if len(current_chunk) + len(para) + 2 > max_size:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            # If single paragraph is too big, split by lines
+            if len(para) > max_size:
+                lines = para.split("\n")
+                current_chunk = ""
+                for line in lines:
+                    if len(current_chunk) + len(line) + 1 > max_size:
+                        if current_chunk:
+                            chunks.append(current_chunk.strip())
+                        current_chunk = line
+                    else:
+                        current_chunk += "\n" + line if current_chunk else line
+            else:
+                current_chunk = para
+        else:
+            current_chunk += "\n\n" + para if current_chunk else para
+
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
+
+def _list_files_recursive(github: GitHubClient, owner: str, repo: str, path: str,
+                          extensions: tuple = (".md", ".yaml", ".yml")) -> list[dict]:
+    """List all files recursively from a GitHub repo path."""
+    items = github.list_scenario_files(owner, repo, path)
+    # list_scenario_files only returns .yaml/.yml, we need .md too
+    # Let's use the raw contents API
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    try:
+        response = github._session.get(url, timeout=30)
+        response.raise_for_status()
+        contents = response.json()
+    except Exception as e:
+        logger.error("Failed to list %s/%s/%s: %s", owner, repo, path, e)
+        return []
+
+    if not isinstance(contents, list):
+        return []
+
+    files = []
+    for item in contents:
+        if item["type"] == "dir":
+            files.extend(_list_files_recursive(github, owner, repo, item["path"], extensions))
+        elif any(item["name"].endswith(ext) for ext in extensions):
+            files.append({"name": item["name"], "path": item["path"], "url": item.get("html_url", "")})
+
+    return files
+
+
+def ingest_scenario_yamls(github: GitHubClient, chroma: ChromaStore) -> int:
+    """Ingest krkn scenario YAML files from GitHub."""
+    owner, repo = "krkn-chaos", "krkn"
+    files = _list_files_recursive(github, owner, repo, "scenarios", extensions=(".yaml", ".yml"))
+    logger.info("Found %d scenario YAML files to ingest", len(files))
+
+    chunks = []
+    for f in files:
+        content = github.get_file_content(owner, repo, f["path"])
+        if not content:
+            continue
+
+        # Parse YAML to extract scenario details
+        try:
+            data = yaml.safe_load(content)
+        except yaml.YAMLError:
+            data = None
+
+        component = _infer_component(f["path"], content)
+
+        # Create a rich text description
+        text = f"Scenario file: {f['path']}\n\n"
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    for scenario_type, config in item.items():
+                        text += f"Scenario type: {scenario_type}\n"
+                        if isinstance(config, dict):
+                            text += f"Configuration:\n{yaml.dump(config, default_flow_style=False)}\n"
+        elif isinstance(data, dict):
+            text += f"Configuration:\n{yaml.dump(data, default_flow_style=False)}\n"
+        else:
+            text += content
+
+        for chunk in _chunk_text(text):
+            chunks.append(DocChunk(
+                text=chunk,
+                component=component,
+                doc_type="scenario",
+                source="krkn-chaos/krkn",
+                version="",
+            ))
+
+    chroma.add_scenario_docs(chunks)
+    logger.info("Ingested %d scenario chunks", len(chunks))
+    return len(chunks)
+
+
+def ingest_website_docs(github: GitHubClient, chroma: ChromaStore) -> int:
+    """Ingest krkn-chaos.dev website documentation from GitHub."""
+    owner, repo = "krkn-chaos", "website"
+    files = _list_files_recursive(github, owner, repo, "content/en/docs", extensions=(".md",))
+    logger.info("Found %d website doc files to ingest", len(files))
+
+    chunks = []
+    for f in files:
+        content = github.get_file_content(owner, repo, f["path"])
+        if not content:
+            continue
+
+        cleaned = _clean_markdown(content)
+        if len(cleaned) < 20:
+            continue
+
+        component = _infer_component(f["path"], cleaned)
+
+        # Prefix with file context
+        text = f"Source: krkn-chaos.dev docs — {f['path']}\n\n{cleaned}"
+
+        for chunk in _chunk_text(text):
+            chunks.append(DocChunk(
+                text=chunk,
+                component=component,
+                doc_type="documentation",
+                source="krkn-chaos/website",
+                version="",
+            ))
+
+    chroma.add_krkn_docs(chunks)
+    logger.info("Ingested %d website doc chunks", len(chunks))
+    return len(chunks)
+
+
+def ingest_krkn_hub_docs(github: GitHubClient, chroma: ChromaStore) -> int:
+    """Ingest krkn-hub scenario documentation from GitHub."""
+    owner, repo = "krkn-chaos", "krkn-hub"
+    files = _list_files_recursive(github, owner, repo, "docs", extensions=(".md",))
+    logger.info("Found %d krkn-hub doc files to ingest", len(files))
+
+    chunks = []
+    for f in files:
+        content = github.get_file_content(owner, repo, f["path"])
+        if not content:
+            continue
+
+        cleaned = _clean_markdown(content)
+        if len(cleaned) < 20:
+            continue
+
+        component = _infer_component(f["path"], cleaned)
+        text = f"Source: krkn-hub docs — {f['path']}\n\n{cleaned}"
+
+        for chunk in _chunk_text(text):
+            chunks.append(DocChunk(
+                text=chunk,
+                component=component,
+                doc_type="krkn-hub",
+                source="krkn-chaos/krkn-hub",
+                version="",
+            ))
+
+    chroma.add_krkn_docs(chunks)
+    logger.info("Ingested %d krkn-hub doc chunks", len(chunks))
+    return len(chunks)
+
+
+def ingest_plugin_code(github: GitHubClient, chroma: ChromaStore) -> int:
+    """Ingest krkn plugin Python code docstrings and get_scenario_types."""
+    owner, repo = "krkn-chaos", "krkn"
+    files = _list_files_recursive(
+        github, owner, repo, "krkn/scenario_plugins", extensions=(".py",)
+    )
+    # Only plugin files, not __init__ or tests
+    plugin_files = [f for f in files if f["name"].endswith("_scenario_plugin.py")]
+    logger.info("Found %d plugin files to ingest", len(plugin_files))
+
+    chunks = []
+    for f in plugin_files:
+        content = github.get_file_content(owner, repo, f["path"])
+        if not content:
+            continue
+
+        component = _infer_component(f["path"], content)
+
+        # Extract class docstrings and get_scenario_types
+        text = f"Plugin: {f['path']}\n\n"
+
+        # Extract class name and docstring
+        class_match = re.search(
+            r'class\s+(\w+ScenarioPlugin).*?:\s*\n\s*"""(.*?)"""',
+            content, re.DOTALL
+        )
+        if class_match:
+            text += f"Class: {class_match.group(1)}\n"
+            text += f"Description: {class_match.group(2).strip()}\n\n"
+
+        # Extract get_scenario_types return value
+        types_match = re.search(
+            r'def\s+get_scenario_types\s*\(self\).*?return\s+(\[.*?\])',
+            content, re.DOTALL
+        )
+        if types_match:
+            text += f"Scenario types: {types_match.group(1)}\n\n"
+
+        # Extract run method signature and docstring
+        run_match = re.search(
+            r'def\s+run\s*\(self.*?\).*?:\s*\n\s*"""(.*?)"""',
+            content, re.DOTALL
+        )
+        if run_match:
+            text += f"Run method: {run_match.group(1).strip()}\n"
+
+        for chunk in _chunk_text(text):
+            chunks.append(DocChunk(
+                text=chunk,
+                component=component,
+                doc_type="plugin",
+                source="krkn-chaos/krkn",
+                version="",
+            ))
+
+    chroma.add_scenario_docs(chunks)
+    logger.info("Ingested %d plugin chunks", len(chunks))
+    return len(chunks)
+
+
+def _clean_html(html: str) -> str:
+    """Strip HTML tags and extract text content from Sphinx docs."""
+    import re
+    # Remove script/style blocks
+    html = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove navigation, sidebar, footer
+    html = re.sub(r'<div[^>]*class="[^"]*(?:sidebar|nav|footer|header|search)[^"]*"[^>]*>.*?</div>', "", html, flags=re.DOTALL | re.IGNORECASE)
+    # Replace block elements with newlines
+    html = re.sub(r"<(?:p|div|br|h[1-6]|li|tr|dt|dd)[^>]*>", "\n", html, flags=re.IGNORECASE)
+    # Remove all remaining tags
+    html = re.sub(r"<[^>]+>", " ", html)
+    # Decode HTML entities
+    html = html.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&nbsp;", " ")
+    # Collapse whitespace
+    html = re.sub(r"[ \t]+", " ", html)
+    html = re.sub(r"\n{3,}", "\n\n", html)
+    return html.strip()
+
+
+def ingest_krkn_lib_docs(github: GitHubClient, chroma: ChromaStore) -> int:
+    """Ingest krkn-lib API documentation from krkn-lib-docs repo (Sphinx HTML)."""
+    owner, repo = "krkn-chaos", "krkn-lib-docs"
+
+    # Only ingest core API docs, skip tests and duplicates
+    core_docs = [
+        "k8s.krkn_kubernetes.html",
+        "ocp.krkn_openshift.html",
+        "models.k8s.models.html",
+        "models.krkn.models.html",
+        "utils.functions.html",
+        "prometheus.krkn_prometheus.html",
+        "telemetry.k8s.krkn_telemetry_kubernetes.html",
+        "telemetry.ocp.krkn_telemetry_openshift.html",
+        "elastic.krkn_elastic.html",
+        "modules.html",
+    ]
+
+    logger.info("Ingesting %d krkn-lib doc files", len(core_docs))
+
+    chunks = []
+    for filename in core_docs:
+        content = github.get_file_content(owner, repo, filename)
+        if not content:
+            logger.warning("Failed to fetch %s", filename)
+            continue
+
+        cleaned = _clean_html(content)
+        if len(cleaned) < 50:
+            continue
+
+        # Determine component from filename
+        component = "general"
+        if "kubernetes" in filename:
+            component = "kubernetes"
+        elif "openshift" in filename:
+            component = "openshift"
+        elif "elastic" in filename:
+            component = "telemetry"
+        elif "prometheus" in filename:
+            component = "monitoring"
+        elif "models" in filename:
+            component = "models"
+
+        text = f"Source: krkn-lib API docs — {filename}\n\n{cleaned}"
+
+        for chunk in _chunk_text(text):
+            chunks.append(DocChunk(
+                text=chunk,
+                component=component,
+                doc_type="api-reference",
+                source="krkn-chaos/krkn-lib-docs",
+                version="",
+            ))
+
+    chroma.add_krkn_docs(chunks)
+    logger.info("Ingested %d krkn-lib doc chunks", len(chunks))
+    return len(chunks)
+
+
+def run_full_ingestion(github_token: str, chroma_dir: str = "./chroma_data") -> dict:
+    """Run full ingestion pipeline — pull all docs from GitHub, ingest into ChromaDB."""
+    github = GitHubClient(token=github_token)
+    chroma = ChromaStore(persist_dir=chroma_dir)
+
+    logger.info("Starting full ingestion from GitHub...")
+
+    results = {}
+    results["scenario_yamls"] = ingest_scenario_yamls(github, chroma)
+    results["website_docs"] = ingest_website_docs(github, chroma)
+    results["krkn_hub_docs"] = ingest_krkn_hub_docs(github, chroma)
+    results["plugin_code"] = ingest_plugin_code(github, chroma)
+    results["krkn_lib_docs"] = ingest_krkn_lib_docs(github, chroma)
+    results["total"] = sum(results.values())
+
+    logger.info("Ingestion complete: %s", results)
+    return results
+
+
+if __name__ == "__main__":
+    import json
+    import os
+    import sys
+    from pathlib import Path
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+
+    # Load GitHub token
+    token = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+    if not token:
+        cursor_cfg = Path.home() / ".cursor" / "mcp.json"
+        if cursor_cfg.exists():
+            with open(cursor_cfg) as f:
+                cfg = json.load(f)
+            token = cfg.get("mcpServers", {}).get("github", {}).get("env", {}).get(
+                "GITHUB_PERSONAL_ACCESS_TOKEN", ""
+            )
+
+    if not token:
+        print("ERROR: Set GITHUB_PERSONAL_ACCESS_TOKEN or configure in ~/.cursor/mcp.json")
+        sys.exit(1)
+
+    chroma_dir = sys.argv[1] if len(sys.argv) > 1 else "./chroma_data"
+    results = run_full_ingestion(token, chroma_dir)
+    print(f"\nIngestion results: {json.dumps(results, indent=2)}")
