@@ -1,4 +1,10 @@
-"""Chaos relevance filter — determines if a bug needs a chaos test."""
+"""Chaos relevance filter — determines if a bug needs a chaos test.
+
+Core rule: If a bug involves a component behaving incorrectly during, after,
+or because of any disruption (restart, failure, load, resource pressure,
+upgrade, scaling) — it's chaos-relevant. Even if the symptom appears in a
+different component than the root cause.
+"""
 
 import logging
 
@@ -13,61 +19,149 @@ NON_CHAOS_KEYWORDS = [
     "vulnerability",
     "flaky test",
     "test infrastructure",
+    "ci failure",
+    "test fix",
     "documentation",
     "typo",
-    "UI ",
-    "console ",
-    "button",
-    "render",
+    "backport",
+    "cherry-pick",
+    "cherry pick",
+    "bump to",
+    "bump ",
+    "rebase",
+    "vendor update",
+    "dependency update",
+    "[stub]",
 ]
 
 # Keywords that indicate a bug IS chaos-relevant
 CHAOS_KEYWORDS = [
+    # Component crash/restart
     "crash",
+    "panic",
+    "oom",
+    "out of memory",
+    "oom kill",
+    "deadlock",
+    "crashloop",
+    "restart loop",
+    # Timeouts and degradation
     "timeout",
+    "timed out",
+    "context deadline",
     "unavailable",
     "degraded",
     "unhealthy",
+    "not ready",
+    # Performance degradation (NEW)
+    "slow",
+    "latency increased",
+    "high latency",
+    "p99",
+    "p95",
+    "response time",
+    "throughput",
+    "performance degradation",
+    "performance regression",
+    # Cluster health (NEW)
+    "cluster operator",
+    "clusteroperator",
+    "co degraded",
+    "co unavailable",
+    "operator degraded",
+    "operator unavailable",
+    "cluster unhealthy",
+    # Consensus and leadership
     "quorum",
     "leader election",
+    "split brain",
+    # Node failures
     "node drain",
     "node reboot",
     "node delete",
     "node replace",
+    "node failure",
+    "node not ready",
+    # Network disruption
     "network partition",
     "latency",
-    "oom",
-    "out of memory",
-    "disk full",
-    "pod eviction",
+    "packet loss",
+    "dns failure",
     "connection refused",
-    "certificate expired",
-    "failover",
-    "recovery",
-    "restart loop",
-    "crashloop",
-    "not ready",
-    "upgrade fail",
-    "rollback",
-    "stuck",
-    "deadlock",
+    "connection reset",
+    "connection timeout",
+    # Service disruption (NEW)
+    "service down",
+    "endpoint not reachable",
+    "service unavailable",
+    "502",
+    "503",
+    "504",
+    # Resource exhaustion (NEW)
+    "high cpu",
+    "memory leak",
+    "resource quota",
+    "limit reached",
+    "resource exhaustion",
+    "cpu spike",
+    "memory spike",
+    "disk full",
+    "disk pressure",
+    "memory pressure",
     "resource pressure",
     "throttl",
-    "scale",
-    "missing",
-    "not cleared",
+    # Scaling (NEW)
+    "scale up failed",
+    "autoscaler",
+    "pending pods",
+    "scheduling failed",
+    "insufficient resources",
+    "node pressure",
+    "capacity",
+    # Pod disruption
+    "pod eviction",
+    "pod kill",
+    "pod disruption",
+    # Upgrade/rollback (expanded)
+    "upgrade fail",
+    "upgrade from",
+    "upgrade to",
+    "rollback",
+    "doesn't recover",
+    "doesn't reconcile",
+    "failed to reconcile",
+    "not reconciling",
+    "stale after restart",
+    # Intermittent failures (NEW)
+    "intermittent",
+    "flapping",
+    "under load",
+    "under pressure",
+    "under stress",
+    # Certificates and time
+    "certificate expired",
+    "cert rotation",
+    "clock skew",
+    # Data integrity
+    "data loss",
+    "data corruption",
+    "corrupt",
     "stale",
-    "static pod",
-    "member",
+    "not cleared",
+    "missing",
+    # General failure indicators
+    "failover",
+    "recovery",
+    "stuck",
     "outage",
     "disruption",
     "failure",
     "failed",
-    "fail",
     "kill",
     "lost",
-    "corrupt",
-    "split brain",
+    "static pod",
+    "member",
+    "scale",
 ]
 
 # krkn injection capabilities for Part 2 of the filter
@@ -91,13 +185,21 @@ def filter_bug(bug: Bug) -> FilterResult:
     """
     text = f"{bug.summary} {bug.description}".lower()
 
+    # Check for clone/stub in first 200 chars
+    if "clone of issue" in text[:200] or "[stub]" in bug.summary.lower():
+        return FilterResult(
+            bug=bug,
+            chaos_relevant=False,
+            skip_reason="Stub/clone ticket — not an original bug report",
+        )
+
     # Part 1: Check for non-chaos indicators
     for keyword in NON_CHAOS_KEYWORDS:
         if keyword.lower() in text:
             return FilterResult(
                 bug=bug,
                 chaos_relevant=False,
-                skip_reason=f"Not chaos-relevant: matches non-chaos keyword '{keyword}'",
+                skip_reason=f"Not chaos-relevant: matches skip keyword '{keyword}'",
             )
 
     # Part 1: Check for chaos indicators
@@ -164,38 +266,51 @@ def _extract_failure_mode(text: str, matched_keywords: list[str]) -> str:
 def _match_injection_method(text: str) -> str | None:
     """Match bug description against krkn's injection capabilities.
 
-    Priority order matters — more specific matches first to avoid
-    'node delete' matching 'pod' because 'delete' isn't in pod keywords.
+    Priority order matters — more specific matches first.
     """
-    # Ordered from most specific to least specific
     injection_rules: list[tuple[str, list[str]]] = [
         ("node", [
             "node delete", "node replace", "node drain", "node reboot",
             "node shutdown", "node fail", "node not ready", "kubelet",
-            "machine api", "node outage", "nodestatuses",
+            "machine api", "node outage", "nodestatuses", "node pressure",
         ]),
         ("network", [
-            "network partition", "network chaos", "latency", "packet loss",
-            "dns fail", "connection refused", "ingress", "ovn",
+            "network partition", "network chaos", "packet loss",
+            "dns fail", "connection refused", "connection reset",
+            "connection timeout", "ingress", "ovn",
             "network outage", "network disruption",
+            "502", "503", "504",
         ]),
         ("resource_stress", [
-            "cpu", "memory pressure", "disk full", "disk pressure",
+            "cpu", "memory pressure", "memory leak", "memory spike",
+            "disk full", "disk pressure", "resource exhaustion",
             "throttl", "resource pressure", "api server load",
-            "resource stress", "hog", "i/o pressure",
+            "resource stress", "hog", "i/o pressure", "cpu spike",
+            "high cpu", "resource quota", "limit reached",
+            "slow", "latency increased", "high latency",
+            "p99", "p95", "response time", "throughput",
+            "performance degradation", "performance regression",
+            "under load", "under pressure", "under stress",
+            "intermittent",
         ]),
         ("pod", [
             "pod kill", "pod delete", "pod disruption", "pod eviction",
             "container restart", "crashloop", "oom", "out of memory",
-            "static pod", "pod fail", "pod outage",
+            "static pod", "pod fail", "pod outage", "oom kill",
         ]),
         ("cluster_state", [
             "crd", "configmap", "operator", "upgrade fail", "rollback",
             "scale", "quorum", "leader election", "member", "etcd",
             "split brain", "cluster state", "corrupt",
+            "cluster operator", "co degraded", "co unavailable",
+            "operator degraded", "upgrade from", "upgrade to",
+            "doesn't reconcile", "failed to reconcile", "not reconciling",
+            "autoscaler", "pending pods", "scheduling failed",
+            "scale up failed", "insufficient resources",
+            "flapping",
         ]),
         ("time_skew", [
-            "clock", "ntp", "time skew", "certificate expired",
+            "clock", "ntp", "time skew", "certificate expired", "cert rotation",
         ]),
         ("cloud_provider", [
             "instance", "volume detach", "stop vm", "az outage",
@@ -209,8 +324,13 @@ def _match_injection_method(text: str) -> str | None:
                 return capability
 
     # Fallback: generic failure keywords
-    generic_failure = ["fail", "crash", "unavailable", "degraded", "unhealthy", "disruption", "outage"]
-    for kw in generic_failure:
+    generic = [
+        "fail", "crash", "unavailable", "degraded", "unhealthy",
+        "disruption", "outage", "panic", "deadlock", "stuck",
+        "doesn't recover", "stale after restart", "data loss",
+        "service down", "service unavailable", "endpoint not reachable",
+    ]
+    for kw in generic:
         if kw in text:
             return "cluster_state"
 
