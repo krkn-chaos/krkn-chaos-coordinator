@@ -49,7 +49,7 @@ Respond with ONLY a JSON object, no other text:
 }"""
 
 
-def _call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
+def call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
     """Call the configured LLM backend and return the response text."""
     if config.provider == LLMProvider.OLLAMA:
         import ollama
@@ -123,7 +123,7 @@ Description: {bug.description[:1500] if bug.description else 'No description'}
 Is this bug chaos-relevant? Respond with JSON only."""
 
     try:
-        text = _call_llm(
+        text = call_llm(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
