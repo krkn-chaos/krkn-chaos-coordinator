@@ -7,6 +7,22 @@ from src.models import ActionType, GapAnalysis
 
 logger = logging.getLogger(__name__)
 
+# Lazy-loaded knowledge base for validated command generation
+_kb = None
+
+
+def _get_knowledgebase():
+    """Lazy-load the scenario knowledge base."""
+    global _kb
+    if _kb is None:
+        try:
+            from src.knowledge.scenario_knowledgebase import ScenarioKnowledgeBase
+            _kb = ScenarioKnowledgeBase()
+            logger.info("Scenario knowledge base loaded")
+        except Exception as e:
+            logger.warning("Knowledge base not available: %s", e)
+    return _kb
+
 LABEL = "chaos-coordinator"
 
 
@@ -178,6 +194,17 @@ def build_issue_body(gap: GapAnalysis, agent_name: str) -> str:
     for reason in gap.reasoning.split("; "):
         lines.append(f"- {reason}")
     lines.append("")
+
+    # Generated commands from knowledge base
+    kb = _get_knowledgebase()
+    if kb:
+        try:
+            from src.generator.scenario_generator import generate_issue_section
+            generated = generate_issue_section(gap, kb)
+            if generated:
+                lines.append(generated)
+        except Exception as e:
+            logger.warning("Scenario generation failed for %s: %s", gap.bug.key, e)
 
     # Next steps
     lines.append("### Next Steps")
