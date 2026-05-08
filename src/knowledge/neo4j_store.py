@@ -60,6 +60,7 @@ class Neo4jStore:
             "CREATE INDEX IF NOT EXISTS FOR (a:Action) ON (a.url)",
             "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.id)",
             "CREATE INDEX IF NOT EXISTS FOR (r:Run) ON (r.id)",
+            "CREATE INDEX IF NOT EXISTS FOR (m:RunMetrics) ON (m.created_at)",
         ]
         with self._driver.session() as session:
             for q in queries:
@@ -412,6 +413,75 @@ class Neo4jStore:
 
         logger.info("Backfill: updated %d bugs", updated)
         return {"updated": updated}
+
+    def store_run_metrics(self, metrics: dict) -> None:
+        """Store run metrics linked to the most recent Run node for this agent."""
+        with self._driver.session() as session:
+            session.run(
+                """
+                MATCH (r:Run)
+                WHERE r.agent = $agent
+                WITH r ORDER BY r.timestamp DESC LIMIT 1
+                CREATE (m:RunMetrics {
+                    bugs_processed: $bugs_processed,
+                    bugs_succeeded: $bugs_succeeded,
+                    filter_retries: $filter_retries,
+                    filter_escalations: $filter_escalations,
+                    map_fallbacks: $map_fallbacks,
+                    analyze_retries: $analyze_retries,
+                    total_input_tokens: $total_input_tokens,
+                    total_output_tokens: $total_output_tokens,
+                    keyword_filter_hits: $keyword_filter_hits,
+                    semantic_cache_hits: $semantic_cache_hits,
+                    llm_filter_calls: $llm_filter_calls,
+                    llm_map_calls: $llm_map_calls,
+                    llm_analyze_calls: $llm_analyze_calls,
+                    filter_duration_sec: $filter_duration,
+                    map_duration_sec: $map_duration,
+                    analyze_duration_sec: $analyze_duration,
+                    created_at: $ts
+                })
+                MERGE (r)-[:HAS_METRICS]->(m)
+                """,
+                agent=metrics.get("agent", "unknown"),
+                bugs_processed=metrics.get("bugs_processed", 0),
+                bugs_succeeded=metrics.get("bugs_succeeded", 0),
+                filter_retries=metrics.get("filter_retries", 0),
+                filter_escalations=metrics.get("filter_escalations", 0),
+                map_fallbacks=metrics.get("map_fallbacks", 0),
+                analyze_retries=metrics.get("analyze_retries", 0),
+                total_input_tokens=metrics.get("total_input_tokens", 0),
+                total_output_tokens=metrics.get("total_output_tokens", 0),
+                keyword_filter_hits=metrics.get("keyword_filter_hits", 0),
+                semantic_cache_hits=metrics.get("semantic_cache_hits", 0),
+                llm_filter_calls=metrics.get("llm_filter_calls", 0),
+                llm_map_calls=metrics.get("llm_map_calls", 0),
+                llm_analyze_calls=metrics.get("llm_analyze_calls", 0),
+                filter_duration=metrics.get("filter_duration_sec", 0.0),
+                map_duration=metrics.get("map_duration_sec", 0.0),
+                analyze_duration=metrics.get("analyze_duration_sec", 0.0),
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+        logger.info("Stored RunMetrics for agent %s", metrics.get("agent", "unknown"))
+
+    def get_metrics_history(self, limit: int = 20) -> list[dict]:
+        """Get recent run metrics for trend analysis."""
+        with self._driver.session() as session:
+            r = session.run(
+                """
+                MATCH (r:Run)-[:HAS_METRICS]->(m:RunMetrics)
+                RETURN r.agent AS agent, r.timestamp AS run_timestamp,
+                       m.bugs_processed AS bugs_processed,
+                       m.filter_escalations AS escalations,
+                       m.total_input_tokens AS input_tokens,
+                       m.keyword_filter_hits AS keyword_hits,
+                       m.semantic_cache_hits AS cache_hits
+                ORDER BY m.created_at DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            return [dict(record) for record in r]
 
     def close(self) -> None:
         if self._driver:

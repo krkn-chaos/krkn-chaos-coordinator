@@ -30,6 +30,7 @@ class FakeMemoryRepository:
         self._bugs: dict[str, dict] = {}
         self._gaps: dict[str, dict] = {}
         self._runs: list[dict] = []
+        self._data: dict[str, list] = {}
         self._connected: bool = False
 
     def connect(self) -> bool:
@@ -111,6 +112,11 @@ class FakeMemoryRepository:
 
     def get_run_history(self, limit: int = 20) -> list[dict]:
         return self._runs[-limit:]
+
+    def store_run_metrics(self, metrics: dict) -> None:
+        if "run_metrics" not in self._data:
+            self._data["run_metrics"] = []
+        self._data["run_metrics"] = [*self._data["run_metrics"], metrics]
 
     def close(self) -> None:
         self._connected = False
@@ -311,6 +317,8 @@ class TestProtocolCompliance:
             "get_similar_resolved_bugs",
             "mark_gap_resolved",
             "get_run_history",
+            "store_run_metrics",
+            "get_metrics_history",
             "close",
         ]
         for method_name in required_methods:
@@ -333,6 +341,7 @@ class TestProtocolCompliance:
             "get_similar_resolved_bugs",
             "mark_gap_resolved",
             "get_run_history",
+            "store_run_metrics",
             "close",
         ]
         for method_name in required_methods:
@@ -342,3 +351,49 @@ class TestProtocolCompliance:
             assert callable(getattr(FakeMemoryRepository, method_name)), (
                 f"FakeMemoryRepository.{method_name} is not callable"
             )
+
+
+class TestFakeRepoStoreRunMetrics:
+    """Verify store_run_metrics stores and retrieves metrics."""
+
+    def test_fake_repo_store_run_metrics(self) -> None:
+        repo = FakeMemoryRepository()
+        metrics = {
+            "agent": "control_plane",
+            "bugs_processed": 10,
+            "bugs_succeeded": 8,
+            "filter_retries": 1,
+            "filter_escalations": 0,
+            "total_input_tokens": 5000,
+            "total_output_tokens": 1200,
+        }
+
+        repo.store_run_metrics(metrics)
+
+        stored = repo._data["run_metrics"]
+        assert len(stored) == 1
+        assert stored[0]["agent"] == "control_plane"
+        assert stored[0]["bugs_processed"] == 10
+        assert stored[0]["bugs_succeeded"] == 8
+        assert stored[0]["total_input_tokens"] == 5000
+
+    def test_fake_repo_store_multiple_metrics(self) -> None:
+        repo = FakeMemoryRepository()
+        metrics_run1 = {
+            "agent": "control_plane",
+            "bugs_processed": 5,
+            "bugs_succeeded": 3,
+        }
+        metrics_run2 = {
+            "agent": "control_plane",
+            "bugs_processed": 12,
+            "bugs_succeeded": 10,
+        }
+
+        repo.store_run_metrics(metrics_run1)
+        repo.store_run_metrics(metrics_run2)
+
+        stored = repo._data["run_metrics"]
+        assert len(stored) == 2
+        assert stored[0]["bugs_processed"] == 5
+        assert stored[1]["bugs_processed"] == 12
