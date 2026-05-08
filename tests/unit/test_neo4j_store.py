@@ -4,6 +4,8 @@ Uses a FakeMemoryRepository backed by in-memory dicts to verify
 protocol semantics without requiring a running Neo4j instance.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 
 import pytest
@@ -292,6 +294,10 @@ class TestFakeRepoMarkGapResolved:
 class TestProtocolCompliance:
     """Verify that Neo4jStore has all methods required by MemoryRepository."""
 
+    @pytest.mark.skipif(
+        not pytest.importorskip("neo4j", reason="neo4j driver not installed"),
+        reason="neo4j driver not installed",
+    )
     def test_neo4j_store_has_all_protocol_methods(self) -> None:
         from src.knowledge.neo4j_store import Neo4jStore
 
