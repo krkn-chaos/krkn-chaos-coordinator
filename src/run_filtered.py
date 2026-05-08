@@ -2,14 +2,15 @@
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 from src.knowledge.chromadb_store import ChromaStore, DocChunk
+from src.knowledge.neo4j_store import Neo4jStore
 from src.knowledge.scenario_index import index_scenarios_from_repo
 from src.coordinator.orchestrator import deduplicate_gaps, format_approval_queue, format_summary
 from src.agents.act import create_issues_for_gaps, build_issue_title, build_issue_body
-from src.knowledge.memory import MemoryStore
 from src.models import (
     ActionType, AgentResult, Bug, Confidence, FilterResult,
     GapAnalysis, MatchResult, ScenarioMatch,
@@ -128,9 +129,16 @@ def run_from_filtered(
         gaps=gaps,
     )
 
-    # REMEMBER
-    memory = MemoryStore()
-    memory.remember_result(result)
+    # REMEMBER (Neo4j)
+    neo4j_store = Neo4jStore(
+        uri=os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+        user=os.environ.get("NEO4J_USER", "neo4j"),
+    )
+    if neo4j_store.connect():
+        neo4j_store.remember_result(result)
+        neo4j_store.close()
+    else:
+        logger.warning("Neo4j not available — results not persisted")
 
     return result
 

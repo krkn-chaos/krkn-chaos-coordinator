@@ -74,19 +74,18 @@ def main():
     logger.info("Indexed %d scenarios from %s", len(scenarios), args.krkn_repo)
     logger.info("Target release: %s", args.release)
 
-    # Connect Neo4j (optional — falls back to JSON if unavailable)
+    # Connect Neo4j (required — no JSON fallback)
     from src.knowledge.neo4j_store import Neo4jStore
     neo4j_store = Neo4jStore(
         uri=os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
         user=os.environ.get("NEO4J_USER", "neo4j"),
-        password=os.environ.get("NEO4J_PASSWORD", "password"),
     )
-    neo4j_connected = neo4j_store.connect()
-    if neo4j_connected:
-        logger.info("Neo4j connected — REMEMBER phase will use knowledge graph")
-    else:
-        logger.info("Neo4j not available — using JSON memory fallback")
-        neo4j_store = None
+    if not neo4j_store.connect():
+        logger.error(
+            "Neo4j is required. Start it with: docker compose up -d neo4j"
+        )
+        return
+    logger.info("Neo4j connected — REMEMBER phase will use knowledge graph")
 
     # Build agents
     agent_kwargs = {

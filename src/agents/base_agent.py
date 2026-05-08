@@ -10,7 +10,6 @@ from src.filter.chaos_filter import filter_bugs
 from src.filter.llm_filter import llm_filter_bugs
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.component_map import get_components_for_agent
-from src.knowledge.memory import MemoryStore
 from src.knowledge.neo4j_store import Neo4jStore
 from src.knowledge.scenario_index import ScenarioInfo
 from src.models import (
@@ -37,8 +36,7 @@ class BaseDomainAgent(ABC):
         chroma: ChromaStore,
         scenarios: list[ScenarioInfo],
         release: str,
-        memory: MemoryStore | None = None,
-        neo4j_store: Neo4jStore | None = None,
+        neo4j_store: Neo4jStore,
         use_llm: bool = False,
         max_bugs: int = 2000,
         days: int = 14,
@@ -50,7 +48,6 @@ class BaseDomainAgent(ABC):
         self.chroma = chroma
         self.scenarios = scenarios
         self.release = release
-        self.memory = memory or MemoryStore()
         self.neo4j = neo4j_store
         self.use_llm = use_llm
         self.max_bugs = max_bugs
@@ -101,7 +98,7 @@ class BaseDomainAgent(ABC):
             gaps=gaps,
         )
 
-        # REMEMBER (Neo4j + JSON fallback)
+        # REMEMBER
         self._remember(result)
 
         logger.info("=== %s agent complete ===", self.agent_name)
@@ -147,33 +144,16 @@ class BaseDomainAgent(ABC):
 
     def _update_known_bugs(self, known_bugs: list[Bug]) -> None:
         """Update status/priority for already-analyzed bugs. Closes gaps for resolved bugs."""
-        if self.neo4j:
-            try:
-                self.neo4j.update_bug_statuses(known_bugs)
-            except Exception as e:
-                logger.warning("Failed to update known bug statuses: %s", e)
+        self.neo4j.update_bug_statuses(known_bugs)
 
     def _get_known_bugs(self) -> set[str]:
-        """Get already-analyzed bug keys from Neo4j or JSON memory."""
-        if self.neo4j:
-            try:
-                return self.neo4j.get_analyzed_bug_keys_sync()
-            except Exception as e:
-                logger.warning("Neo4j lookup failed, using JSON fallback: %s", e)
-        return self.memory.get_analyzed_bug_keys()
+        """Get already-analyzed bug keys from Neo4j."""
+        return self.neo4j.get_analyzed_bug_keys_sync()
 
     def _remember(self, result: AgentResult) -> None:
-        """Store results in Neo4j and JSON memory."""
-        # Always store in JSON (fast, reliable fallback)
-        self.memory.remember_result(result)
-
-        # Also store in Neo4j if available
-        if self.neo4j:
-            try:
-                self.neo4j.remember_result_sync(result)
-                logger.info("REMEMBER: stored in Neo4j")
-            except Exception as e:
-                logger.warning("Neo4j remember failed (JSON fallback used): %s", e)
+        """Store results in Neo4j."""
+        self.neo4j.remember_result_sync(result)
+        logger.info("REMEMBER: stored in Neo4j")
 
     def _discover(self) -> list[Bug]:
         """DISCOVER: Query JIRA and Sippy for bugs and regressions."""

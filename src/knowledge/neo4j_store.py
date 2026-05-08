@@ -5,6 +5,7 @@ Uses the synchronous Neo4j driver. No LLM needed.
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 
 from neo4j import GraphDatabase
@@ -21,11 +22,17 @@ class Neo4jStore:
         self,
         uri: str = "bolt://localhost:7687",
         user: str = "neo4j",
-        password: str = "password",
+        password: str | None = None,
     ):
         self._uri = uri
         self._user = user
-        self._password = password
+        resolved_password = password or os.environ.get("NEO4J_PASSWORD")
+        if not resolved_password:
+            raise ValueError(
+                "Neo4j password is required. Set the NEO4J_PASSWORD environment "
+                "variable or pass password= explicitly."
+            )
+        self._password = resolved_password
         self._driver = None
 
     def connect(self) -> bool:
