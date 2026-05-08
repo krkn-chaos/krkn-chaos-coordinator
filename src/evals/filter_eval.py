@@ -59,11 +59,17 @@ def run_filter_eval(
     false_positives = 0
     disagreements: list[dict] = []
 
+    skipped = 0
     for i, bug in enumerate(bugs):
         logger.info("Eval %d/%d: %s", i + 1, len(bugs), bug.key)
 
-        baseline_result = llm_filter_bug(bug, baseline_config)
-        candidate_result = llm_filter_bug(bug, candidate_config)
+        try:
+            baseline_result = llm_filter_bug(bug, baseline_config)
+            candidate_result = llm_filter_bug(bug, candidate_config)
+        except Exception as e:
+            logger.warning("Eval skipped for %s (LLM error): %s", bug.key, e)
+            skipped += 1
+            continue
 
         baseline_relevant = baseline_result.chaos_relevant
         candidate_relevant = candidate_result.chaos_relevant
@@ -95,16 +101,18 @@ def run_filter_eval(
             elif not baseline_relevant and candidate_relevant:
                 false_positives += 1
 
-    total = len(bugs)
-    agreement_rate = agreements / total if total > 0 else 0.0
-    false_negative_rate = false_negatives / total if total > 0 else 0.0
-    false_positive_rate = false_positives / total if total > 0 else 0.0
+    evaluated = len(bugs) - skipped
+    if skipped:
+        logger.warning("Eval: %d/%d bugs skipped due to LLM errors", skipped, len(bugs))
+    agreement_rate = agreements / evaluated if evaluated > 0 else 0.0
+    false_negative_rate = false_negatives / evaluated if evaluated > 0 else 0.0
+    false_positive_rate = false_positives / evaluated if evaluated > 0 else 0.0
 
     return EvalReport(
         eval_name="filter_chaos_relevance",
         baseline_model=baseline_model,
         candidate_model=candidate_model,
-        sample_size=total,
+        sample_size=evaluated,
         agreement_rate=agreement_rate,
         false_negative_rate=false_negative_rate,
         false_positive_rate=false_positive_rate,

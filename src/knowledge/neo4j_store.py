@@ -45,8 +45,11 @@ class Neo4jStore:
             self._create_schema()
             logger.info("Neo4j connected at %s", self._uri)
             return True
+        except (OSError, ConnectionError) as e:
+            logger.error("Neo4j connection refused at %s: %s", self._uri, e)
+            return False
         except Exception as e:
-            logger.warning("Neo4j connection failed: %s", e)
+            logger.error("Neo4j connection failed (unexpected): %s: %s", type(e).__name__, e)
             return False
 
     def _create_schema(self) -> None:
@@ -62,8 +65,8 @@ class Neo4jStore:
             for q in queries:
                 try:
                     session.run(q)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Index creation failed (%s): %s", q[:50], e)
 
     def remember_result(self, result: AgentResult) -> dict:
         """Store an agent run's results in the graph."""

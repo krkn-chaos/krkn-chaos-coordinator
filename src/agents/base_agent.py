@@ -300,15 +300,13 @@ class BaseDomainAgent(ABC):
                 )
 
                 neo4j_history = []
-                if self.neo4j:
-                    try:
-                        # Check history for ALL components
-                        for comp in components:
-                            neo4j_history.extend(
-                                self.neo4j.get_similar_resolved_bugs(comp)
-                            )
-                    except Exception as e:
-                        logger.warning("Neo4j history lookup failed: %s", e)
+                try:
+                    for comp in components:
+                        neo4j_history.extend(
+                            self.neo4j.get_similar_resolved_bugs(comp)
+                        )
+                except Exception as e:
+                    logger.warning("Neo4j history lookup failed: %s", e)
 
                 from src.reasoning import llm_analyze_gap
                 gap = llm_analyze_gap(
