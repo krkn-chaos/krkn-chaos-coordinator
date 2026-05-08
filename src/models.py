@@ -64,6 +64,7 @@ class FilterResult:
     failure_mode: str | None = None
     injection_method: str | None = None
     skip_reason: str | None = None
+    confidence: float = 0.5  # 0.0-1.0, keyword filter certainty
 
 
 @dataclass(frozen=True)

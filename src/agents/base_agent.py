@@ -1,15 +1,18 @@
 """Base domain agent with the DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER pipeline."""
 
+from __future__ import annotations
+
 import logging
 from abc import ABC
 
 from src.apis.jira_client import JiraClient
 from src.apis.sippy_client import SippyClient
 from src.apis.github_client import GitHubClient
-from src.filter.chaos_filter import filter_bugs
+from src.filter.chaos_filter import filter_bug, filter_bugs
 from src.filter.llm_filter import llm_filter_bugs
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.component_map import get_components_for_agent
+from src.knowledge.filter_cache import SemanticFilterCache
 from src.knowledge.neo4j_store import Neo4jStore
 from src.knowledge.scenario_index import ScenarioInfo
 from src.models import (
@@ -53,6 +56,15 @@ class BaseDomainAgent(ABC):
         self.max_bugs = max_bugs
         self.days = days
         self.components = get_components_for_agent(agent_name)
+
+        # Semantic filter cache — gracefully degrade if unavailable
+        try:
+            self._filter_cache: SemanticFilterCache | None = SemanticFilterCache(
+                self.chroma._client,
+            )
+        except Exception as e:
+            logger.warning("Semantic filter cache unavailable: %s", e)
+            self._filter_cache = None
 
     def run(self) -> AgentResult:
         """Execute the full pipeline: DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER."""
@@ -165,9 +177,68 @@ class BaseDomainAgent(ABC):
     def _filter(self, bugs: list[Bug]) -> tuple[list[FilterResult], list[FilterResult]]:
         """FILTER: Determine chaos relevance of each bug."""
         if self.use_llm:
-            logger.info("Using LLM-enhanced filter with ChromaDB context")
-            return self._llm_filter_with_docs(bugs)
+            logger.info("Using tiered filter: keyword → semantic cache → LLM")
+            return self._tiered_filter(bugs)
         return filter_bugs(bugs)
+
+    def _tiered_filter(
+        self, bugs: list[Bug],
+    ) -> tuple[list[FilterResult], list[FilterResult]]:
+        """Three-tier filter: keyword → semantic cache → LLM."""
+        relevant: list[FilterResult] = []
+        skipped: list[FilterResult] = []
+        needs_llm: list[Bug] = []
+
+        # Layer 1: Keyword pre-filter with confidence scoring
+        for bug in bugs:
+            kw_result = filter_bug(bug)
+            if kw_result.confidence > 0.8:
+                # High confidence — trust keyword filter
+                if kw_result.chaos_relevant:
+                    relevant.append(kw_result)
+                else:
+                    skipped.append(kw_result)
+            elif kw_result.confidence < 0.2:
+                skipped.append(kw_result)
+            else:
+                needs_llm.append(bug)
+
+        # Layer 2: Semantic cache
+        still_needs_llm: list[Bug] = []
+        for bug in needs_llm:
+            cached = self._filter_cache.get(bug.summary) if self._filter_cache else None
+            if cached is not None:
+                result = FilterResult(
+                    bug=bug,
+                    chaos_relevant=cached.chaos_relevant,
+                    failure_mode=cached.failure_mode,
+                    injection_method=cached.injection_method,
+                    confidence=0.9,
+                )
+                if result.chaos_relevant:
+                    relevant.append(result)
+                else:
+                    skipped.append(result)
+            else:
+                still_needs_llm.append(bug)
+
+        # Layer 3: LLM
+        if still_needs_llm:
+            llm_relevant, llm_skipped = self._llm_filter_with_docs(still_needs_llm)
+            relevant.extend(llm_relevant)
+            skipped.extend(llm_skipped)
+            # Cache LLM results for future runs
+            if self._filter_cache:
+                for r in [*llm_relevant, *llm_skipped]:
+                    self._filter_cache.put(r.bug.summary, r)
+
+        logger.info(
+            "FILTER tiers: %d keyword, %d cached, %d LLM",
+            len(bugs) - len(needs_llm),
+            len(needs_llm) - len(still_needs_llm),
+            len(still_needs_llm),
+        )
+        return relevant, skipped
 
     def _llm_filter_with_docs(
         self, bugs: list[Bug],

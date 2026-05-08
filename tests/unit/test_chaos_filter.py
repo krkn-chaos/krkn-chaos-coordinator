@@ -86,6 +86,75 @@ class TestFilterBug:
         assert not result.chaos_relevant
 
 
+class TestFilterBugConfidence:
+    """Tests for keyword pre-filter confidence scoring."""
+
+    def test_cve_has_high_confidence(self):
+        bug = _make_bug(
+            summary="CVE-2026-99999 openshift4/ose-etcd-rhel9: etcd auth bypass",
+            description="Security Tracking Issue. Do not make this issue public.",
+        )
+        result = filter_bug(bug)
+        assert not result.chaos_relevant
+        assert result.confidence > 0.8
+
+    def test_crash_keyword_has_high_confidence(self):
+        bug = _make_bug(
+            summary="etcd crash under network partition causes data loss",
+            description=(
+                "etcd crashes when network partition occurs between members. "
+                "Panic observed in etcd logs. OOM kill triggered."
+            ),
+        )
+        result = filter_bug(bug)
+        assert result.chaos_relevant
+        assert result.confidence > 0.8
+
+    def test_no_keywords_has_moderate_confidence(self):
+        bug = _make_bug(
+            summary="Console button color is wrong on the overview page",
+            description="The button uses the wrong CSS class for theming.",
+            component="Console",
+        )
+        result = filter_bug(bug)
+        assert not result.chaos_relevant
+        assert 0.5 <= result.confidence <= 0.8
+
+    def test_ambiguous_has_low_confidence(self):
+        bug = _make_bug(
+            summary="operator status fluctuates intermittently",
+            description=(
+                "The cluster operator status changes between Available and Degraded. "
+                "This happens sporadically and resolves itself."
+            ),
+        )
+        result = filter_bug(bug)
+        # Has failure keywords (degraded, intermittent) but may not map to
+        # a specific injection method, resulting in low confidence
+        # If it does map, the confidence should reflect ambiguity
+        assert result.confidence < 0.5 or (
+            result.chaos_relevant and result.confidence <= 0.5
+        )
+
+    def test_stub_has_high_confidence(self):
+        bug = _make_bug(
+            summary="[stub] placeholder for future etcd tracking",
+            description="This is a stub ticket.",
+        )
+        result = filter_bug(bug)
+        assert not result.chaos_relevant
+        assert result.confidence > 0.8
+
+    def test_flaky_test_has_high_confidence(self):
+        bug = _make_bug(
+            summary="flaky test: TestEtcdMemberReplace intermittently fails",
+            description="Test infrastructure issue. The test itself is unreliable.",
+        )
+        result = filter_bug(bug)
+        assert not result.chaos_relevant
+        assert result.confidence > 0.8
+
+
 class TestFilterBugs:
     def test_filters_list_and_returns_tuples(self):
         bugs = [

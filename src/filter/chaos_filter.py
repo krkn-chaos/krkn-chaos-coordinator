@@ -193,6 +193,7 @@ def filter_bug(bug: Bug) -> FilterResult:
             bug=bug,
             chaos_relevant=False,
             skip_reason="Stub/clone ticket — not an original bug report",
+            confidence=0.95,
         )
 
     # Part 1: Check for non-chaos indicators
@@ -202,6 +203,7 @@ def filter_bug(bug: Bug) -> FilterResult:
                 bug=bug,
                 chaos_relevant=False,
                 skip_reason=f"Not chaos-relevant: matches skip keyword '{keyword}'",
+                confidence=0.95,
             )
 
     # Part 1: Check for chaos indicators
@@ -211,6 +213,7 @@ def filter_bug(bug: Bug) -> FilterResult:
             bug=bug,
             chaos_relevant=False,
             skip_reason="No chaos-relevant failure mode keywords found in bug description",
+            confidence=0.7,
         )
 
     # Part 2: Determine injection method
@@ -223,6 +226,26 @@ def filter_bug(bug: Bug) -> FilterResult:
             chaos_relevant=False,
             failure_mode=failure_mode,
             skip_reason="Failure mode identified but no matching krkn injection capability",
+            confidence=0.3,
+        )
+
+    # Check if only generic failure keywords matched (less specific)
+    specific_keywords = [
+        "crash", "panic", "oom", "out of memory", "deadlock", "crashloop",
+        "node drain", "node reboot", "node delete", "network partition",
+        "packet loss", "dns failure", "pod eviction", "pod kill",
+        "certificate expired", "clock skew", "data loss", "data corruption",
+        "disk full", "memory leak", "quorum", "split brain",
+    ]
+    has_specific = any(kw in matched_keywords for kw in specific_keywords)
+
+    if has_specific:
+        return FilterResult(
+            bug=bug,
+            chaos_relevant=True,
+            failure_mode=failure_mode,
+            injection_method=injection_method,
+            confidence=0.85,
         )
 
     return FilterResult(
@@ -230,6 +253,7 @@ def filter_bug(bug: Bug) -> FilterResult:
         chaos_relevant=True,
         failure_mode=failure_mode,
         injection_method=injection_method,
+        confidence=0.5,
     )
 
 

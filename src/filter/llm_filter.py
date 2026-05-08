@@ -44,33 +44,65 @@ krkn can inject these failure types:
 Respond with ONLY a JSON object, no other text:
 {
   "chaos_relevant": true/false,
+  "confidence": 0-100,
   "failure_mode": "brief description of the failure mode" or null,
   "injection_method": "which krkn injection type would test this" or null,
-  "skip_reason": "why this is not chaos-relevant" or null,
-  "confidence": 0.0-1.0
+  "skip_reason": "why this is not chaos-relevant" or null
 }"""
 
 
-def call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
-    """Call the configured LLM backend and return the response text."""
+def call_llm(
+    messages: list[dict],
+    config: LLMBackendConfig,
+    system_prompt: str | None = None,
+) -> str:
+    """Call the configured LLM backend and return the response text.
+
+    Args:
+        messages: Conversation messages (role/content dicts).
+        config: LLM backend configuration.
+        system_prompt: When provided AND provider is Anthropic, passed via
+            the ``system`` parameter with ``cache_control`` for prompt caching.
+            Non-Anthropic providers fall back to including the system message
+            in the messages list.
+    """
     if config.provider == LLMProvider.OLLAMA:
         import ollama
+
+        # For non-Anthropic providers, prepend system_prompt as a message
+        effective_messages = _prepend_system_message(messages, system_prompt)
         response = ollama.chat(
             model=config.model,
-            messages=messages,
+            messages=effective_messages,
             options={"temperature": 0.1, "num_predict": 300},
         )
         return response["message"]["content"].strip()
 
     elif config.provider == LLMProvider.ANTHROPIC:
         import anthropic
+
         client = anthropic.Anthropic(api_key=config.api_key)
-        system = messages[0]["content"] if messages[0]["role"] == "system" else ""
         user_msgs = [m for m in messages if m["role"] != "system"]
+
+        if system_prompt is not None:
+            # Use cache_control for Anthropic prompt caching
+            system_param: str | list[dict] = [{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }]
+        else:
+            # Legacy path: extract system from messages
+            system_param = (
+                messages[0]["content"]
+                if messages and messages[0]["role"] == "system"
+                else ""
+            )
+
         response = client.messages.create(
             model=config.model,
-            max_tokens=300,
-            system=system,
+            max_tokens=1024,
+            system=system_param,
             messages=user_msgs,
             temperature=0.1,
         )
@@ -78,10 +110,12 @@ def call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
 
     elif config.provider == LLMProvider.OPENAI:
         import openai
+
+        effective_messages = _prepend_system_message(messages, system_prompt)
         client = openai.OpenAI(api_key=config.api_key)
         response = client.chat.completions.create(
             model=config.model,
-            messages=messages,
+            messages=effective_messages,
             max_tokens=300,
             temperature=0.1,
         )
@@ -89,9 +123,15 @@ def call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
 
     elif config.provider == LLMProvider.GOOGLE:
         import google.genai as genai
+
+        effective_messages = _prepend_system_message(messages, system_prompt)
         client = genai.Client(api_key=config.api_key)
-        system = messages[0]["content"] if messages[0]["role"] == "system" else ""
-        user_msg = messages[-1]["content"]
+        system = (
+            effective_messages[0]["content"]
+            if effective_messages and effective_messages[0]["role"] == "system"
+            else ""
+        )
+        user_msg = effective_messages[-1]["content"]
         response = client.models.generate_content(
             model=config.model,
             contents=f"{system}\n\n{user_msg}",
@@ -99,6 +139,23 @@ def call_llm(messages: list[dict], config: LLMBackendConfig) -> str:
         return response.text.strip()
 
     raise ValueError(f"Unsupported LLM provider: {config.provider}")
+
+
+def _prepend_system_message(
+    messages: list[dict],
+    system_prompt: str | None,
+) -> list[dict]:
+    """Return messages with system_prompt prepended (for non-Anthropic providers).
+
+    If ``system_prompt`` is provided, any existing system messages are removed
+    and the new system prompt is prepended.  If ``system_prompt`` is None the
+    original messages are returned unchanged.
+    """
+    if system_prompt is None:
+        return messages
+
+    user_msgs = [m for m in messages if m["role"] != "system"]
+    return [{"role": "system", "content": system_prompt}, *user_msgs]
 
 
 def llm_filter_bug(
@@ -120,7 +177,7 @@ def llm_filter_bug(
     Falls back to the keyword filter if LLM fails.
     """
     if config is None:
-        config = detect_llm_backend()
+        config = detect_llm_backend(phase="filter")
 
     if config.provider == LLMProvider.NONE:
         from src.filter.chaos_filter import filter_bug
@@ -159,14 +216,12 @@ Description: {bug.description[:1500] if bug.description else 'No description'}
 {ocp_section}{krkn_section}
 Is this bug chaos-relevant? Respond with JSON only."""
 
+    messages = [
+        {"role": "user", "content": prompt},
+    ]
+
     try:
-        text = call_llm(
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            config=config,
-        )
+        text = call_llm(messages, config, system_prompt=SYSTEM_PROMPT)
 
         # Extract JSON from response (handle markdown code blocks)
         if "```" in text:
@@ -176,6 +231,28 @@ Is this bug chaos-relevant? Respond with JSON only."""
             text = text.strip()
 
         result = json.loads(text)
+
+        # Confidence-based escalation: re-run with Opus when confidence is low
+        raw_confidence = result.get("confidence", 1.0)
+        # Normalize to 0-100 scale (handle both 0-1 and 0-100 formats)
+        confidence = int(raw_confidence * 100) if raw_confidence <= 1.0 else int(raw_confidence)
+
+        if confidence < 80 and "opus" not in config.model.lower():
+            logger.info(
+                "FILTER escalation: %s confidence=%d, re-running with Opus",
+                bug.key,
+                confidence,
+            )
+            opus_config = detect_llm_backend(phase="analyze")
+            text = call_llm(messages, opus_config, system_prompt=SYSTEM_PROMPT)
+
+            if "```" in text:
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+                text = text.strip()
+
+            result = json.loads(text)
 
         return FilterResult(
             bug=bug,

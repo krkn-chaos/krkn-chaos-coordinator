@@ -70,7 +70,7 @@ def llm_map_match(
         ScenarioMatch with LLM-reasoned match result.
     """
     if config is None:
-        config = detect_llm_backend()
+        config = detect_llm_backend(phase="map")
 
     scenario_context = "\n---\n".join(
         hit["text"][:500] for hit in scenario_hits[:5]
@@ -119,10 +119,10 @@ Does any existing scenario cover this bug's exact failure mode?"""
     try:
         text = call_llm(
             messages=[
-                {"role": "system", "content": MAP_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             config=config,
+            system_prompt=MAP_SYSTEM_PROMPT,
         )
 
         # Extract JSON from response
@@ -245,7 +245,7 @@ def llm_analyze_gap(
         GapAnalysis with LLM-generated confidence score, reasoning, and modifications.
     """
     if config is None:
-        config = detect_llm_backend()
+        config = detect_llm_backend(phase="analyze")
 
     ocp_context = "\n---\n".join(
         hit["text"][:400] for hit in ocp_docs[:3]
@@ -294,10 +294,10 @@ Analyze this gap. Score confidence and provide SPECIFIC modifications."""
     try:
         text = call_llm(
             messages=[
-                {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             config=config,
+            system_prompt=ANALYZE_SYSTEM_PROMPT,
         )
 
         if "```" in text:
