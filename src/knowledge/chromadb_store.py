@@ -1,5 +1,7 @@
 """ChromaDB vector store for krkn and OCP documentation search."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 

@@ -1,5 +1,7 @@
 """Create draft PRs on GitHub forks for chaos scenario changes."""
 
+from __future__ import annotations
+
 import logging
 import subprocess
 from pathlib import Path
@@ -23,6 +25,8 @@ UPSTREAM_OWNER = "krkn-chaos"
 
 def _run_git(repo_path: Path, *args: str) -> tuple[int, str]:
     """Run a git command in a repo directory."""
+from __future__ import annotations
+
     cmd = ["git", "-C", str(repo_path)] + list(args)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return result.returncode, result.stdout.strip() + result.stderr.strip()
