@@ -25,8 +25,6 @@ UPSTREAM_OWNER = "krkn-chaos"
 
 def _run_git(repo_path: Path, *args: str) -> tuple[int, str]:
     """Run a git command in a repo directory."""
-from __future__ import annotations
-
     cmd = ["git", "-C", str(repo_path)] + list(args)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return result.returncode, result.stdout.strip() + result.stderr.strip()

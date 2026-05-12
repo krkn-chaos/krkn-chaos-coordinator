@@ -13,8 +13,6 @@ GITHUB_API = "https://api.github.com"
 
 class GitHubClient:
     """Read krkn-chaos repos and create PRs/issues."""
-from __future__ import annotations
-
 
     def __init__(self, token: str):
         self._session = requests.Session()

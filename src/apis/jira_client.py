@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 
 def _extract_text_from_adf(doc: dict) -> str:
     """Extract plain text from Atlassian Document Format (ADF).
-from __future__ import annotations
-
 
     JIRA REST API v3 returns descriptions as ADF (nested JSON) instead of
     plain strings. This recursively extracts text nodes.
