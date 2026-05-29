@@ -38,10 +38,16 @@ AGENT_CLASSES = {
 
 def main():
     parser = argparse.ArgumentParser(description="krkn-chaos-coordinator")
-    parser.add_argument("--release", default="4.21", help="OCP release to analyze")
+    parser.add_argument(
+        "--release", default="4.21",
+        help="OCP release(s) to analyze. Comma-separated for multiple (e.g. '4.20,4.21'). Default: 4.21",
+    )
     parser.add_argument(
         "--agent", default=None,
-        help=f"Run a single agent ({', '.join(AGENT_CLASSES.keys())}). Default: all.",
+        help=(
+            f"Agent(s) to run. Comma-separated for multiple (e.g. 'control_plane,networking'). "
+            f"'all' or omit for all agents. Available: {', '.join(AGENT_CLASSES.keys())}"
+        ),
     )
     parser.add_argument(
         "--max-bugs", type=int, default=2000, help="Max bugs per agent from JIRA (default: 2000)"
@@ -76,7 +82,21 @@ def main():
     scenarios = index_scenarios_from_repo(Path(args.krkn_repo))
 
     logger.info("Indexed %d scenarios from %s", len(scenarios), args.krkn_repo)
-    logger.info("Target release: %s", args.release)
+
+    # Parse releases and agents
+    releases = [r.strip() for r in args.release.split(",") if r.strip()]
+    logger.info("Target release(s): %s", ", ".join(releases))
+
+    if args.agent and args.agent.lower() != "all":
+        agent_names = [a.strip() for a in args.agent.split(",") if a.strip()]
+        unknown = [a for a in agent_names if a not in AGENT_CLASSES]
+        if unknown:
+            print(f"Unknown agent(s): {', '.join(unknown)}. Available: {', '.join(AGENT_CLASSES.keys())}")
+            return
+    else:
+        agent_names = list(AGENT_CLASSES.keys())
+
+    logger.info("Agent(s): %s", ", ".join(agent_names))
 
     # Connect Neo4j (required — no JSON fallback)
     from src.knowledge.neo4j_store import Neo4jStore
@@ -86,41 +106,34 @@ def main():
     )
     if not neo4j_store.connect():
         logger.error(
-            "Neo4j is required. Start it with: docker compose up -d neo4j"
+            "Neo4j is required. Start it with: podman start neo4j-coordinator"
         )
         return
     logger.info("Neo4j connected — REMEMBER phase will use knowledge graph")
 
-    # Build agents
-    agent_kwargs = {
-        "jira": jira,
-        "sippy": sippy,
-        "github": github,
-        "chroma": chroma,
-        "scenarios": scenarios,
-        "release": args.release,
-        "neo4j_store": neo4j_store,
-        "use_llm": args.use_llm,
-    }
+    # Run each agent × release combination
+    all_results = []
+    for release in releases:
+        agent_kwargs = {
+            "jira": jira,
+            "sippy": sippy,
+            "github": github,
+            "chroma": chroma,
+            "scenarios": scenarios,
+            "release": release,
+            "neo4j_store": neo4j_store,
+            "use_llm": args.use_llm,
+        }
 
-    if args.agent:
-        if args.agent not in AGENT_CLASSES:
-            print(f"Unknown agent: {args.agent}. Available: {', '.join(AGENT_CLASSES.keys())}")
-            return
-        agents_to_run = [AGENT_CLASSES[args.agent](**agent_kwargs)]
-    else:
-        agents_to_run = [cls(**agent_kwargs) for cls in AGENT_CLASSES.values()]
-
-    # Run agents
-    results = []
-    for agent in agents_to_run:
-        result = agent.run()
-        results.append(result)
+        for agent_name in agent_names:
+            agent = AGENT_CLASSES[agent_name](**agent_kwargs)
+            result = agent.run()
+            all_results.append(result)
 
     # Orchestrator: deduplicate and format
-    gaps = deduplicate_gaps(results)
+    gaps = deduplicate_gaps(all_results)
 
-    print(format_summary(results))
+    print(format_summary(all_results))
     print()
     if gaps:
         print(format_approval_queue(gaps))

@@ -36,42 +36,103 @@ If the user query is NOT empty, run in **Targeted Query** mode:
 Before running the pipeline, ask the user two questions using AskUserQuestion:
 
 **Question 1 — OCP Version:**
-Ask: "Which OpenShift version do you want to scan?"
-Options:
-- 4.19
-- 4.20
-- 4.21
-- 4.22
+- Question: "Which OpenShift version(s) to scan?"
+- Options:
+  - "4.21 (Recommended)" — Current latest stable
+  - "4.20" — Previous stable
+  - "4.19" — Older supported
+  - "All (4.19, 4.20, 4.21, 4.22)" — Scan across all supported versions
+- Note: User can also type a custom comma-separated list like "4.20,4.21"
 
 **Question 2 — Agent Scope:**
-Ask: "Which domain agent(s) should run?"
-Options (multiSelect: true):
-- control_plane — Etcd, API Server, Scheduler, HyperShift
-- networking — OVN, DNS, Ingress, SR-IOV, MetalLB
-- node_machine — Kubelet, CRI-O, Machine API, Bare Metal
-- storage — CSI, Local Storage, Image Registry, LVMS
-- operators_platform — OLM, Console, Monitoring, Auth, Cloud Compute
-- upgrade_lifecycle — CVO, MCO, Installer variants
+- Question: "Which domain agent(s) should run?"
+- multiSelect: true
+- Options:
+  - "All agents (Recommended)" — Run all 6 agents
+  - "control_plane" — Etcd, API Server, Scheduler, HyperShift
+  - "networking" — OVN, DNS, Ingress, SR-IOV, MetalLB
+  - "node_machine" — Kubelet, CRI-O, Machine API, Bare Metal
+  - "storage" — CSI, Local Storage, Image Registry, LVMS
+  - "operators_platform" — OLM, Console, Monitoring, Auth, Cloud Compute
+  - "upgrade_lifecycle" — CVO, MCO, Installer variants
 
-Use the selected version as `--release` and selected agents to determine which to run.
+## Running the Pipeline
 
-After getting answers, run:
+After getting answers, run the pipeline using `main.py`:
 
 ```bash
 cd /Users/sahil/krkn-chaos-coordinator && PYTHONPATH=. /opt/homebrew/opt/python@3.11/bin/python3.11 src/main.py \
-  --release <VERSION> \
-  --agent <AGENT_NAME> \
+  --release <VERSION_OR_COMMA_LIST> \
+  --agent <AGENT_OR_COMMA_LIST_OR_all> \
   --use-llm \
   --max-bugs 50 \
   --days 14
 ```
 
-If user selected multiple agents, run them sequentially and combine results.
-If user selected all agents, omit `--agent` flag to run all.
+**Examples:**
+- Single version, single agent: `--release 4.21 --agent control_plane`
+- Multiple versions: `--release 4.20,4.21`
+- Multiple agents: `--agent control_plane,networking,storage`
+- All agents (omit --agent or pass "all"): `--release 4.21`
+- Everything: `--release 4.19,4.20,4.21 --agent all`
 
-After the pipeline completes, present the results summary and approval queue.
+## Architecture Reference
 
-## Pipeline Steps (Reference — for Targeted Query mode)
+### Pipeline: DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER
+
+Each agent runs the full pipeline for its component area.
+
+### DISCOVER (JIRA + Sippy + z-stream changelogs)
+- Three-tier version query:
+  - Tier 1: bugs tagged with target release (>= 4.21, < 4.22)
+  - Tier 2: open bugs from older versions (unfixed, likely still present)
+  - Tier 3: bugs with no affectedVersion set
+- Z-stream enrichment from OpenShift release controller (fix commits, images)
+- Neo4j dedup: already-analyzed bugs get status update only (zero LLM cost)
+
+### FILTER (3-tier: keyword → semantic cache → LLM)
+- Layer 1: Keyword pre-filter (167 chaos keywords, 17 skip patterns). Zero tokens.
+- Layer 2: Semantic cache in ChromaDB (cosine distance < 0.15). Zero tokens.
+- Layer 3: LLM classification via claude_code provider (--bare --system-prompt for minimal token usage ~2,700/call)
+- Confidence < 80 auto-escalates from Sonnet to Opus
+
+### MAP (ChromaDB RAG + LLM reasoning)
+- Per-component ChromaDB search (scenarios + krkn docs + OCP docs)
+- krkn-knowledgebase lookup for validated scenario patterns
+- LLM determines: FULL_MATCH / PARTIAL_MATCH / NO_MATCH
+- Fallback: distance-based thresholds (< 0.35 = FULL, < 0.65 = PARTIAL)
+
+### ANALYZE (Opus-level reasoning)
+- Context: OCP docs + krkn plugins + Neo4j resolved bug history + z-stream fixes
+- Scoring: repro steps (+20), existing scenario (+25), docs understanding (+20), plugin match (+15), domain (+10), prior art (+10)
+- Generates SPECIFIC modifications (not vague "extend this scenario")
+
+### Confidence → Action:
+- 70-100 HIGH → Draft PRs across krkn + krkn-hub + website
+- 40-69 MEDIUM → GitHub issue with recommendation
+- 0-39 LOW → GitHub issue describing gap
+
+### LLM Provider: claude_code
+- Uses `claude -p --bare --system-prompt --exclude-dynamic-system-prompt-sections`
+- ~2,700 tokens per FILTER call (vs 63,000 without --bare)
+- Per-call token usage logged: `LLM CALL #N: X in + Y out = Z tokens, $cost`
+- Total usage logged at end: `TOKEN USAGE: X input + Y output = Z total, cost=$X, calls=N`
+
+### 6 Domain Agents (96 OCPBUGS components mapped):
+| Agent | Key Components |
+|-------|---------------|
+| control_plane | Etcd, kube-apiserver, kube-scheduler, HyperShift (7 variants), oauth, Pod Autoscaler |
+| networking | OVN-Kubernetes, DNS, router, SR-IOV, MetalLB, FRR-K8s, nmstate, DPU |
+| node_machine | Kubelet, CRI-O, Machine API, Bare Metal (6 sub-components), Cluster Autoscaler, RHCOS |
+| storage | Storage core, CSI drivers, Local Storage, Image Registry, LVMS, Secrets Store CSI |
+| operators_platform | OLM, Console, Monitoring, Auth, Insights, Cloud Compute (8 providers), oc CLI |
+| upgrade_lifecycle | CVO, MCO, Installer (10 variants), LCA, TALM, oc-mirror |
+
+### Knowledge Layer:
+- **ChromaDB**: Vector search over krkn scenarios, krkn docs, OCP docs, filter cache
+- **Neo4j**: Operational memory — 3,000+ bugs, 465+ gaps, component relationships, run metrics
+
+## Targeted Query Pipeline Steps
 
 ### Step 1: DISCOVER
 
