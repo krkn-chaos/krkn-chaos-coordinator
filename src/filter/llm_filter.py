@@ -32,10 +32,15 @@ _usage = _UsageAccumulator()
 
 
 def _accumulate_usage(input_tokens: int, output_tokens: int, cost_usd: float) -> None:
+    _usage.call_count += 1
     _usage.input_tokens += input_tokens
     _usage.output_tokens += output_tokens
     _usage.cost_usd += cost_usd
-    _usage.call_count += 1
+    logger.info(
+        "LLM CALL #%d: %d in + %d out = %d tokens, $%.4f",
+        _usage.call_count, input_tokens, output_tokens,
+        input_tokens + output_tokens, cost_usd,
+    )
 
 
 def get_token_usage() -> dict:
