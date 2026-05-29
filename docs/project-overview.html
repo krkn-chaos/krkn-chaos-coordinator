@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>krkn-chaos-coordinator — Project Overview</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+    --pink: #f778ba;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+  .hero {
+    background: linear-gradient(135deg, #1a1e2e 0%, #0d1117 50%, #161b22 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(88,166,255,0.05) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(188,140,255,0.05) 0%, transparent 50%);
+    animation: drift 20s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(-2%, 1%); }
+  }
+  .hero h1 {
+    font-size: 2.8em;
+    font-weight: 800;
+    position: relative;
+    background: linear-gradient(90deg, var(--accent), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 1.2em;
+    color: var(--text-dim);
+    position: relative;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+
+  /* Navigation */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13,17,23,0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  nav .nav-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  nav a {
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 14px 16px;
+    font-size: 0.9em;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  nav a:hover, nav a.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Sections */
+  section { margin-bottom: 60px; scroll-margin-top: 60px; }
+  h2 {
+    font-size: 1.8em;
+    font-weight: 700;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .num {
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 0.5em;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+  }
+  h3 {
+    font-size: 1.2em;
+    margin: 24px 0 12px;
+    color: var(--accent);
+  }
+  p, li { color: var(--text); margin-bottom: 8px; }
+  ul { padding-left: 24px; }
+  li { margin-bottom: 6px; }
+  strong { color: #fff; }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card h4 {
+    font-size: 1em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p { font-size: 0.9em; color: var(--text-dim); margin: 0; }
+  .badge {
+    display: inline-block;
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .badge-cyan { background: rgba(57,210,192,0.15); color: var(--cyan); }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+
+  /* Diagrams */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 24px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .diagram-title {
+    text-align: center;
+    font-size: 0.85em;
+    color: var(--text-dim);
+    margin-top: 16px;
+    font-style: italic;
+  }
+
+  /* Pipeline diagram */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    justify-content: center;
+    flex-wrap: wrap;
+    min-height: 120px;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 130px;
+    position: relative;
+  }
+  .stage-box {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 12px;
+    text-align: center;
+    width: 130px;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .stage-box:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(88,166,255,0.15);
+  }
+  .stage-box .icon { font-size: 1.5em; margin-bottom: 6px; }
+  .stage-box .name { font-weight: 700; font-size: 0.85em; }
+  .stage-box .desc { font-size: 0.7em; color: var(--text-dim); margin-top: 4px; }
+  .stage-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    color: var(--text-dim);
+    font-size: 1.2em;
+  }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    align-items: center;
+  }
+  .arch-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+  .arch-box {
+    background: var(--surface2);
+    border: 2px solid;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 140px;
+    transition: transform 0.2s;
+  }
+  .arch-box:hover { transform: scale(1.03); }
+  .arch-box.orchestrator { border-color: var(--accent); min-width: 280px; }
+  .arch-box.agent { border-color: var(--purple); flex: 1; min-width: 130px; max-width: 160px; }
+  .arch-box.knowledge { border-color: var(--cyan); flex: 1; min-width: 150px; }
+  .arch-box.api { border-color: var(--orange); flex: 1; min-width: 130px; }
+  .arch-box .box-label { font-size: 0.65em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .arch-box .box-title { font-weight: 700; font-size: 0.95em; }
+  .arch-box .box-desc { font-size: 0.75em; color: var(--text-dim); margin-top: 4px; }
+  .arch-connector {
+    width: 2px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 auto;
+    position: relative;
+  }
+  .arch-connector::after {
+    content: '\25BC';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--border);
+    font-size: 0.7em;
+  }
+
+  /* Filter diagram */
+  .filter-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 700px;
+  }
+  .filter-node {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    flex: 1;
+    text-align: center;
+  }
+  .filter-node.keyword { border-color: var(--green); }
+  .filter-node.cache { border-color: var(--cyan); }
+  .filter-node.llm { border-color: var(--purple); }
+  .filter-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 120px;
+  }
+  .filter-branch .result {
+    font-size: 0.8em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .filter-branch .hit { background: rgba(63,185,80,0.15); color: var(--green); }
+  .filter-branch .miss { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+  .down-arrow { color: var(--text-dim); font-size: 1.2em; }
+
+  /* Code blocks */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 0.85em;
+    line-height: 1.5;
+    margin: 12px 0;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.9em;
+  }
+  :not(pre) > code {
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* Confidence table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+  }
+  th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface);
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+  }
+  td { font-size: 0.9em; }
+
+  /* Callout */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .callout.tip { border-left-color: var(--green); }
+  .callout.warn { border-left-color: var(--orange); }
+  .callout.important { border-left-color: var(--red); }
+  .callout strong { display: block; margin-bottom: 4px; }
+
+  /* Q&A */
+  .qa { margin: 12px 0; }
+  .qa details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+  }
+  .qa details[open] { border-color: var(--accent); }
+  .qa summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95em;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .qa summary::before { content: 'Q'; color: var(--accent); font-weight: 800; font-size: 0.85em; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa .answer {
+    padding: 0 20px 16px 20px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: 0;
+  }
+
+  /* Repo tree */
+  .tree {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.85em;
+    line-height: 1.7;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 12px 0;
+  }
+  .tree .dir { color: var(--accent); font-weight: 600; }
+  .tree .file { color: var(--text-dim); }
+  .tree .comment { color: var(--green); font-style: italic; }
+
+  /* Analogy section */
+  .analogy {
+    background: linear-gradient(135deg, rgba(88,166,255,0.05), rgba(188,140,255,0.05));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    margin: 24px 0;
+    text-align: center;
+  }
+  .analogy .emoji { font-size: 3em; margin-bottom: 12px; }
+  .analogy blockquote {
+    font-size: 1.15em;
+    font-style: italic;
+    color: var(--text);
+    max-width: 650px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+
+  /* Day 1 checklist */
+  .checklist {
+    list-style: none;
+    padding: 0;
+  }
+  .checklist li {
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+  }
+  .checklist .check {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--text-dim);
+    font-size: 0.85em;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 1.8em; }
+    .pipeline { gap: 8px; }
+    .stage { min-width: 100px; }
+    .stage-box { width: 100px; padding: 10px 8px; }
+    .arch-row { flex-direction: column; align-items: center; }
+    h2 { font-size: 1.4em; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>krkn-chaos-coordinator</h1>
+  <p class="subtitle">AI-driven multi-agent system that finds gaps in chaos test coverage for OpenShift — and closes them automatically.</p>
+</div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#big-picture">Big Picture</a>
+    <a href="#why">Why This Exists</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#filter">Filter System</a>
+    <a href="#knowledge">Knowledge Layer</a>
+    <a href="#confidence">Confidence &amp; Actions</a>
+    <a href="#repo">Repo Structure</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#faq">FAQ</a>
+    <a href="#day1">Day 1 Checklist</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- SECTION 1: BIG PICTURE -->
+<section id="big-picture">
+  <h2><span class="num">1</span> The Big Picture</h2>
+
+  <div class="analogy">
+    <div class="emoji">&#x1F3E5;</div>
+    <blockquote>
+      Think of this system like a <strong>triage nurse for bugs</strong>. Thousands of bugs come in from JIRA. The system reads each one, decides which ones represent failure modes we should be <em>proactively injecting</em> in test environments, and then either writes the chaos test or files a ticket for a human to write it.
+    </blockquote>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>&#x1F41B; Input: Bugs &amp; Regressions</h4>
+      <p>Pulls from JIRA (OCPBUGS project) and Sippy (test regression data). These are real production failure reports from OpenShift clusters.</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F916; Processing: AI Agents</h4>
+      <p>6 domain agents, each covering a part of OpenShift (control plane, networking, storage, etc.), run a multi-stage pipeline to analyze each bug.</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F3AF; Output: Tests &amp; Issues</h4>
+      <p>High-confidence gaps get draft PRs to krkn repos. Medium-confidence get GitHub issues. The goal: turn every uncovered failure mode into a chaos test.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: WHY THIS EXISTS -->
+<section id="why">
+  <h2><span class="num">2</span> Why This Exists</h2>
+
+  <h3>The Problem</h3>
+  <ul>
+    <li><strong>OpenShift is massive</strong> — thousands of components, thousands of bugs filed every release cycle.</li>
+    <li><strong>krkn</strong> is the chaos testing tool for OpenShift (like Netflix's Chaos Monkey for Kubernetes). It injects failures — kills pods, partitions networks, fills disks — to verify the platform recovers.</li>
+    <li><strong>Nobody has time</strong> to manually read every bug and ask: "Should we have a chaos test for this?"</li>
+    <li><strong>Coverage gaps pile up silently.</strong> Bugs describe real failure modes that happened in production, but if nobody creates a chaos test for them, we can't proactively detect regressions next time.</li>
+  </ul>
+
+  <h3>The Solution</h3>
+  <p>Automate the entire workflow: read bugs, decide if they're chaos-testable, check if we already cover them, and create PRs/issues to close the gaps. Humans review and approve at the end — the AI does the legwork.</p>
+
+  <div class="callout tip">
+    <strong>Key Insight</strong>
+    Not every bug needs a chaos test. A typo in a log message, a CVE patch, or a UI rendering glitch — those aren't failure modes krkn can simulate. The <em>filter</em> is the most important part of the system.
+  </div>
+</section>
+
+<!-- SECTION 3: ARCHITECTURE -->
+<section id="architecture">
+  <h2><span class="num">3</span> Architecture</h2>
+
+  <div class="diagram">
+    <div class="arch-diagram">
+      <!-- APIs Row -->
+      <div style="text-align:center;font-size:0.8em;color:var(--text-dim);font-weight:600;letter-spacing:1px;text-transform:uppercase;">External Data Sources</div>
+      <div class="arch-row">
+        <div class="arch-box api">
+          <div class="box-label" style="color:var(--orange)">API</div>
+          <div class="box-title">JIRA</div>
+          <div class="box-desc">OCPBUGS bugs</div>
+        </div>
+        <div class="arch-box api">
+          <div class="box-label" style="color:var(--orange)">API</div>
+          <div class="box-title">Sippy</div>
+          <div class="box-desc">Test regressions</div>
+        </div>
+        <div class="arch-box api">
+          <div class="box-label" style="color:var(--orange)">API</div>
+          <div class="box-title">GitHub</div>
+          <div class="box-desc">PRs &amp; Issues</div>
+        </div>
+      </div>
+
+      <div class="arch-connector"></div>
+
+      <!-- Orchestrator -->
+      <div class="arch-row">
+        <div class="arch-box orchestrator">
+          <div class="box-label" style="color:var(--accent)">Coordinator</div>
+          <div class="box-title">Orchestrator</div>
+          <div class="box-desc">Spawns agents, deduplicates gaps, formats approval queue</div>
+        </div>
+      </div>
+
+      <div class="arch-connector"></div>
+
+      <!-- Agents Row -->
+      <div style="text-align:center;font-size:0.8em;color:var(--text-dim);font-weight:600;letter-spacing:1px;text-transform:uppercase;">6 Domain Agents (run in parallel)</div>
+      <div class="arch-row">
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Control Plane</div>
+          <div class="box-desc">etcd, apiserver, scheduler</div>
+        </div>
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Upgrade</div>
+          <div class="box-desc">CVO, MCO, Installer</div>
+        </div>
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Node/Machine</div>
+          <div class="box-desc">kubelet, CRI-O, BM</div>
+        </div>
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Networking</div>
+          <div class="box-desc">OVN-K, DNS, ingress</div>
+        </div>
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Storage</div>
+          <div class="box-desc">CSI, registry, PVCs</div>
+        </div>
+        <div class="arch-box agent">
+          <div class="box-label" style="color:var(--purple)">Agent</div>
+          <div class="box-title">Ops/Platform</div>
+          <div class="box-desc">OLM, Console, auth</div>
+        </div>
+      </div>
+
+      <div class="arch-connector"></div>
+
+      <!-- Knowledge Row -->
+      <div style="text-align:center;font-size:0.8em;color:var(--text-dim);font-weight:600;letter-spacing:1px;text-transform:uppercase;">Knowledge &amp; Memory Layer</div>
+      <div class="arch-row">
+        <div class="arch-box knowledge">
+          <div class="box-label" style="color:var(--cyan)">Vector DB</div>
+          <div class="box-title">ChromaDB</div>
+          <div class="box-desc">4,089 doc chunks — scenarios, krkn docs, OCP docs</div>
+        </div>
+        <div class="arch-box knowledge">
+          <div class="box-label" style="color:var(--cyan)">Graph DB</div>
+          <div class="box-title">Neo4j</div>
+          <div class="box-desc">Knowledge graph — bugs, gaps, actions, metrics</div>
+        </div>
+        <div class="arch-box knowledge">
+          <div class="box-label" style="color:var(--cyan)">LLM</div>
+          <div class="box-title">Claude / Ollama</div>
+          <div class="box-desc">AI reasoning for filter, map, analyze phases</div>
+        </div>
+      </div>
+    </div>
+    <p class="diagram-title">Figure 1: System architecture — data flows from APIs through agents to knowledge stores</p>
+  </div>
+</section>
+
+<!-- SECTION 4: PIPELINE -->
+<section id="pipeline">
+  <h2><span class="num">4</span> The Pipeline</h2>
+  <p>Every agent runs the same 6-stage pipeline. This is the core loop of the system.</p>
+
+  <div class="diagram">
+    <div class="pipeline">
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--orange);">
+          <div class="icon">&#x1F50D;</div>
+          <div class="name">DISCOVER</div>
+          <div class="desc">Pull bugs from JIRA</div>
+        </div>
+      </div>
+      <div class="stage-arrow">&#x2192;</div>
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--red);">
+          <div class="icon">&#x1F6AB;</div>
+          <div class="name">FILTER</div>
+          <div class="desc">Is this chaos-testable?</div>
+        </div>
+      </div>
+      <div class="stage-arrow">&#x2192;</div>
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--cyan);">
+          <div class="icon">&#x1F5FA;</div>
+          <div class="name">MAP</div>
+          <div class="desc">Do we already cover it?</div>
+        </div>
+      </div>
+      <div class="stage-arrow">&#x2192;</div>
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--purple);">
+          <div class="icon">&#x1F4CA;</div>
+          <div class="name">ANALYZE</div>
+          <div class="desc">Score confidence</div>
+        </div>
+      </div>
+      <div class="stage-arrow">&#x2192;</div>
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--green);">
+          <div class="icon">&#x26A1;</div>
+          <div class="name">ACT</div>
+          <div class="desc">Create PRs / Issues</div>
+        </div>
+      </div>
+      <div class="stage-arrow">&#x2192;</div>
+      <div class="stage">
+        <div class="stage-box" style="border-color: var(--accent);">
+          <div class="icon">&#x1F4BE;</div>
+          <div class="name">REMEMBER</div>
+          <div class="desc">Store in Neo4j</div>
+        </div>
+      </div>
+    </div>
+    <p class="diagram-title">Figure 2: The 6-stage agent pipeline — each domain agent runs this independently</p>
+  </div>
+
+  <h3>Stage Details</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4><span class="badge badge-orange">1</span> DISCOVER</h4>
+      <p>Queries JIRA for bugs in the agent's components. Prioritizes Critical/Major/Blocker bugs. Enriches with fix commits and Z-stream data. Default: last 14 days, up to 2000 bugs per agent.</p>
+    </div>
+    <div class="card">
+      <h4><span class="badge badge-red">2</span> FILTER</h4>
+      <p>The most critical stage. Asks two questions: (1) Is this a resilience failure mode? (2) Can krkn inject this failure? Uses a 3-tier system: keywords &rarr; semantic cache &rarr; LLM. See the <a href="#filter" style="color:var(--accent)">Filter section</a> for details.</p>
+    </div>
+    <div class="card">
+      <h4><span class="badge badge-cyan">3</span> MAP</h4>
+      <p>For chaos-relevant bugs, searches ChromaDB for existing krkn scenarios that already test this failure mode. Classifies as FULL_MATCH (already covered), PARTIAL_MATCH (similar but not exact), or NO_MATCH (gap found).</p>
+    </div>
+    <div class="card">
+      <h4><span class="badge badge-purple">4</span> ANALYZE</h4>
+      <p>For unmatched bugs (gaps), scores confidence 0-100. Gathers OCP docs, krkn docs, and similar resolved bugs from Neo4j. Suggests which base scenario to extend and what modifications are needed.</p>
+    </div>
+    <div class="card">
+      <h4><span class="badge badge-green">5</span> ACT</h4>
+      <p>Based on confidence score: HIGH (70-100) creates draft PRs across krkn + krkn-hub + website repos. MEDIUM (40-69) creates a GitHub issue. LOW (0-39) logs it and skips.</p>
+    </div>
+    <div class="card">
+      <h4><span class="badge badge-blue">6</span> REMEMBER</h4>
+      <p>Stores everything in Neo4j knowledge graph — bugs analyzed, gaps found, actions taken. This prevents re-processing the same bug and enables trend analysis over time.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 5: FILTER SYSTEM -->
+<section id="filter">
+  <h2><span class="num">5</span> The Filter System (Most Important Part)</h2>
+
+  <p>The filter decides whether a bug describes a failure that krkn can simulate. It's a 3-tier system designed to be fast, accurate, and cost-effective.</p>
+
+  <div class="diagram">
+    <div class="filter-flow">
+      <div class="filter-step">
+        <div class="filter-node keyword">
+          <strong>Tier 1: Keyword Pre-filter</strong>
+          <div style="font-size:0.8em;color:var(--text-dim);margin-top:4px;">
+            Instant. Checks for chaos keywords (crash, panic, OOM, timeout) and anti-keywords (CVE, flaky test, docs).
+          </div>
+        </div>
+        <div class="filter-branch">
+          <span class="result hit">High confidence &rarr; RETURN</span>
+          <span class="result miss">Ambiguous &rarr; continue</span>
+        </div>
+      </div>
+
+      <div class="down-arrow">&#x25BC;</div>
+
+      <div class="filter-step">
+        <div class="filter-node cache">
+          <strong>Tier 2: Semantic Cache</strong>
+          <div style="font-size:0.8em;color:var(--text-dim);margin-top:4px;">
+            1-5ms. ChromaDB embedding search — "have we seen a similar bug summary before?" If distance &lt; 0.15, return cached result.
+          </div>
+        </div>
+        <div class="filter-branch">
+          <span class="result hit">Cache hit &rarr; RETURN</span>
+          <span class="result miss">Cache miss &rarr; continue</span>
+        </div>
+      </div>
+
+      <div class="down-arrow">&#x25BC;</div>
+
+      <div class="filter-step">
+        <div class="filter-node llm">
+          <strong>Tier 3: LLM Reasoning</strong>
+          <div style="font-size:0.8em;color:var(--text-dim);margin-top:4px;">
+            3-5s. Claude/Ollama reads the bug + docs context and reasons: "Is this a chaos-testable failure mode?" Low-confidence results escalate to a stronger model.
+          </div>
+        </div>
+        <div class="filter-branch">
+          <span class="result hit">Decision &rarr; RETURN + cache</span>
+        </div>
+      </div>
+    </div>
+    <p class="diagram-title">Figure 3: Three-tier filter — fast path for obvious cases, LLM only when needed</p>
+  </div>
+
+  <h3>What IS Chaos-Relevant?</h3>
+  <table>
+    <thead>
+      <tr><th>Chaos-Relevant (YES)</th><th>Not Chaos-Relevant (NO)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Pod crashes under network partition</td><td>CVE security patch</td></tr>
+      <tr><td>etcd leader election failure during node drain</td><td>Typo in documentation</td></tr>
+      <tr><td>OOM kill when resource limits exceeded</td><td>Flaky CI test (timing issue)</td></tr>
+      <tr><td>Data loss during unclean shutdown</td><td>UI rendering glitch</td></tr>
+      <tr><td>Deadlock when API server is slow</td><td>Dependency version bump</td></tr>
+      <tr><td>Certificate expiry causes cascading failure</td><td>Missing translation string</td></tr>
+    </tbody>
+  </table>
+
+  <h3>krkn Injection Methods</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>&#x1F4A5; Pod Disruption</h4>
+      <p>Kill pods, trigger OOM, force crashloops, restart containers</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F5A5; Node Scenarios</h4>
+      <p>Drain nodes, reboot, delete, network-isolate, shut down</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F310; Network Chaos</h4>
+      <p>Partition, latency injection, packet loss, DNS failures</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F4C8; Resource Stress</h4>
+      <p>CPU hog, memory hog, disk fill, I/O pressure</p>
+    </div>
+    <div class="card">
+      <h4>&#x23F0; Time Skew</h4>
+      <p>Clock manipulation, certificate expiry, NTP failures</p>
+    </div>
+    <div class="card">
+      <h4>&#x2601; Cloud Provider</h4>
+      <p>Stop VMs, detach volumes, AZ outages</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 6: KNOWLEDGE LAYER -->
+<section id="knowledge">
+  <h2><span class="num">6</span> Knowledge Layer</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>&#x1F4D6; ChromaDB <span class="badge badge-cyan">Vector DB</span></h4>
+      <p><strong>What:</strong> Semantic search over docs and scenarios. Stores 4,089 embedded chunks across 3 collections.</p>
+      <p style="margin-top:8px"><strong>Collections:</strong></p>
+      <ul style="margin-top:4px;font-size:0.85em;">
+        <li><code>scenario_docs</code> — 65 chunks from krkn scenario YAMLs</li>
+        <li><code>krkn_docs</code> — 750 chunks from krkn website/hub docs</li>
+        <li><code>ocp_docs</code> — 3,274 chunks from OpenShift module docs</li>
+      </ul>
+      <p style="margin-top:8px"><strong>Key feature:</strong> Per-component search — queries each component separately, merges and deduplicates, avoids dilution for multi-component bugs.</p>
+    </div>
+    <div class="card">
+      <h4>&#x1F578; Neo4j <span class="badge badge-purple">Graph DB</span></h4>
+      <p><strong>What:</strong> Persistent knowledge graph tracking everything the system has analyzed.</p>
+      <p style="margin-top:8px"><strong>Node types:</strong></p>
+      <ul style="margin-top:4px;font-size:0.85em;">
+        <li><code>Bug</code> — JIRA bug with all metadata</li>
+        <li><code>Component</code> — linked to bugs via <code>[:HAS_BUG]</code></li>
+        <li><code>Gap</code> — coverage gaps linked to bugs via <code>[:HAS_GAP]</code></li>
+        <li><code>Run</code> — agent execution with metrics</li>
+        <li><code>Action</code> — GitHub PRs/issues linked to gaps</li>
+      </ul>
+      <p style="margin-top:8px"><strong>Purpose:</strong> Deduplication (don't re-analyze bugs), trend analysis, tracking which gaps have been resolved.</p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div style="text-align:center;">
+      <pre style="display:inline-block;text-align:left;font-size:0.85em;background:var(--surface2);border-color:var(--purple);">
+ ┌──────────┐    HAS_BUG     ┌─────────────┐    HAS_GAP     ┌─────────┐
+ │Component │──────────────&gt;│    Bug       │──────────────&gt;│  Gap    │
+ │          │                │ key, summary │                │ score,  │
+ │ name     │                │ status,      │                │ level,  │
+ └──────────┘                │ priority     │                │ action  │
+                             └──────┬───────┘                └────┬────┘
+                                    │                              │
+                                    │ ANALYZED_IN               RESOLVED_BY
+                                    ▼                              ▼
+                             ┌──────────────┐              ┌──────────┐
+                             │     Run      │              │  Action  │
+                             │ timestamp,   │              │ PR/Issue │
+                             │ agent_name   │              │ url      │
+                             └──────────────┘              └──────────┘</pre>
+    </div>
+    <p class="diagram-title">Figure 4: Neo4j graph schema — how bugs, gaps, and actions are connected</p>
+  </div>
+</section>
+
+<!-- SECTION 7: CONFIDENCE SCORING -->
+<section id="confidence">
+  <h2><span class="num">7</span> Confidence Scoring &amp; Actions</h2>
+
+  <p>After identifying a coverage gap, the ANALYZE phase scores it 0-100. The score determines what action the system takes.</p>
+
+  <table>
+    <thead>
+      <tr><th>Score</th><th>Level</th><th>Action</th><th>What Happens</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge badge-green">70-100</span></td>
+        <td>HIGH</td>
+        <td>Draft PR</td>
+        <td>Creates PRs across krkn + krkn-hub + website repos with scenario YAML, wrapper script, and docs</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-orange">40-69</span></td>
+        <td>MEDIUM</td>
+        <td>GitHub Issue</td>
+        <td>Creates a GitHub issue with detailed recommendation, base scenario suggestion, and modifications needed</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-red">0-39</span></td>
+        <td>LOW</td>
+        <td>Skip</td>
+        <td>Logs the gap but takes no action — not enough confidence the gap is real or actionable</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Human Review Required</strong>
+    The system never merges PRs or closes issues on its own. Everything goes into an approval queue that a human reviews. The AI does the research and drafting — humans approve.
+  </div>
+</section>
+
+<!-- SECTION 8: REPO STRUCTURE -->
+<section id="repo">
+  <h2><span class="num">8</span> Repository Structure</h2>
+
+  <div class="tree">
+<span class="dir">krkn-chaos-coordinator/</span>
+├── <span class="dir">src/</span>
+│   ├── main.py                       <span class="comment"># CLI entry point</span>
+│   ├── models.py                     <span class="comment"># All domain models (Bug, Gap, etc.)</span>
+│   ├── reasoning.py                  <span class="comment"># LLM reasoning for MAP + ANALYZE</span>
+│   ├── <span class="dir">agents/</span>
+│   │   ├── base_agent.py             <span class="comment"># Pipeline: DISCOVER→REMEMBER</span>
+│   │   └── control_plane_agent.py    <span class="comment"># Control Plane domain agent</span>
+│   ├── <span class="dir">apis/</span>
+│   │   ├── jira_client.py            <span class="comment"># JIRA REST API</span>
+│   │   ├── sippy_client.py           <span class="comment"># Sippy regressions API</span>
+│   │   └── github_client.py          <span class="comment"># GitHub API (issues + PRs)</span>
+│   ├── <span class="dir">knowledge/</span>
+│   │   ├── chromadb_store.py         <span class="comment"># Vector search (4,089 chunks)</span>
+│   │   ├── neo4j_store.py            <span class="comment"># Knowledge graph</span>
+│   │   ├── component_map.py          <span class="comment"># Agent → component mapping</span>
+│   │   ├── scenario_index.py         <span class="comment"># Index krkn YAML scenarios</span>
+│   │   └── filter_cache.py           <span class="comment"># Semantic filter cache</span>
+│   └── <span class="dir">filter/</span>
+│       ├── chaos_filter.py           <span class="comment"># Keyword-based filter</span>
+│       ├── llm_filter.py             <span class="comment"># LLM-enhanced filter</span>
+│       ├── llm_config.py             <span class="comment"># LLM backend detection</span>
+│       └── llm_tools.py              <span class="comment"># Typed wrappers per phase</span>
+├── <span class="dir">tests/</span>
+│   ├── <span class="dir">unit/</span>                        <span class="comment"># ~40 unit tests</span>
+│   └── <span class="dir">integration/</span>                 <span class="comment"># Neo4j + API integration tests</span>
+├── pyproject.toml                    <span class="comment"># Dependencies &amp; project config</span>
+├── docker-compose.yaml               <span class="comment"># Neo4j container</span>
+└── CLAUDE.md                         <span class="comment"># Project documentation</span>
+  </div>
+
+  <div class="callout tip">
+    <strong>Start Here</strong>
+    Read these files in order: <code>models.py</code> (understand the data) &rarr; <code>agents/base_agent.py</code> (understand the pipeline) &rarr; <code>filter/chaos_filter.py</code> (understand the core logic).
+  </div>
+</section>
+
+<!-- SECTION 9: QUICK START -->
+<section id="quickstart">
+  <h2><span class="num">9</span> Quick Start</h2>
+
+  <h3>Setup</h3>
+  <pre><code># Clone and set up
+git clone &lt;repo-url&gt;
+cd krkn-chaos-coordinator
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+
+# Environment
+cp .env.example .env
+# Fill in: JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, GITHUB_TOKEN,
+#          NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD</code></pre>
+
+  <h3>Run Tests</h3>
+  <pre><code># Unit tests
+PYTHONPATH=. pytest tests/unit/ -v
+
+# With coverage
+PYTHONPATH=. pytest tests/ -v --cov=src</code></pre>
+
+  <h3>Run the System</h3>
+  <pre><code># Single agent (start here)
+PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane
+
+# With LLM enhancement
+PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane --use-llm
+
+# All agents
+PYTHONPATH=. python src/main.py --release 4.21</code></pre>
+
+  <h3>Neo4j</h3>
+  <pre><code># Start Neo4j
+docker compose up -d neo4j
+
+# UI: http://localhost:7474
+# Bolt: bolt://localhost:7687  (neo4j / password)</code></pre>
+</section>
+
+<!-- SECTION 10: FAQ -->
+<section id="faq">
+  <h2><span class="num">10</span> Questions You Might Ask</h2>
+
+  <div class="qa">
+    <details>
+      <summary>What is krkn exactly?</summary>
+      <div class="answer">
+        <strong>krkn</strong> is an open-source chaos engineering tool specifically built for Kubernetes/OpenShift. Think of it like Netflix's Chaos Monkey but for the Red Hat ecosystem. It can inject failures like killing pods, draining nodes, partitioning networks, filling disks, skewing clocks, and more. It lives at <code>github.com/krkn-chaos/krkn</code>. There's also <strong>krkn-hub</strong> (wrapper scripts for common scenarios) and the <strong>krkn website</strong> (documentation).
+      </div>
+    </details>
+
+    <details>
+      <summary>What is OpenShift and how does it relate to Kubernetes?</summary>
+      <div class="answer">
+        OpenShift is Red Hat's enterprise Kubernetes distribution. It adds features on top of vanilla Kubernetes — operators, a web console, integrated CI/CD, enhanced security, etc. The bugs we analyze come from OCPBUGS, the JIRA project tracking OpenShift bugs. When we say "component" we mean an OpenShift component like "kube-apiserver" or "Machine Config Operator."
+      </div>
+    </details>
+
+    <details>
+      <summary>Why do we need AI/LLM for this? Can't we just use keywords?</summary>
+      <div class="answer">
+        Keywords handle ~60-70% of cases well. But many bugs are ambiguous. For example: "API server returns 504 under high load" — is that a chaos-testable resource exhaustion issue, or just a configuration problem? The LLM reads the full bug description, understands context, and makes nuanced judgments. We use a tiered approach: keywords first (free, instant), then LLM only when needed (costs ~$0.01-0.05 per bug).
+      </div>
+    </details>
+
+    <details>
+      <summary>What are the domain agents and why 6 of them?</summary>
+      <div class="answer">
+        OpenShift has ~96 component areas. We split them into 6 logical groups that match how the engineering teams are organized. Each agent specializes in its domain and queries only its relevant components from JIRA. They run in parallel for speed and their results are deduplicated by the orchestrator. The 6 agents are: Control Plane, Upgrade/Lifecycle, Node/Machine, Networking, Storage, and Operators/Platform.
+      </div>
+    </details>
+
+    <details>
+      <summary>What's ChromaDB and why do we use it?</summary>
+      <div class="answer">
+        ChromaDB is a vector database — it stores text as numerical embeddings and lets you search by semantic similarity ("find docs that are <em>about</em> network partitions" rather than "find docs containing the word 'partition'"). We use it for three things: (1) searching krkn scenario configs to see if a test already exists, (2) pulling relevant documentation for LLM context, and (3) caching filter results for similar bugs.
+      </div>
+    </details>
+
+    <details>
+      <summary>What's Neo4j used for here?</summary>
+      <div class="answer">
+        Neo4j is a graph database. We use it to track relationships: Bug → has Gap → resolved by Action (PR/Issue). This lets us answer questions like "which components have the most unresolved gaps?" and "have we already analyzed this bug?" It's the system's long-term memory — preventing duplicate work across runs and enabling trend analysis.
+      </div>
+    </details>
+
+    <details>
+      <summary>What does a typical run look like? How long does it take?</summary>
+      <div class="answer">
+        A single agent run (e.g., Control Plane) takes ~30-90 seconds depending on LLM usage. It discovers 50-200 bugs from JIRA, filters most of them out (typically 70-80% are not chaos-relevant), maps the remaining against existing scenarios, and analyzes any gaps found. Output is a structured approval queue showing what actions the system recommends.
+      </div>
+    </details>
+
+    <details>
+      <summary>What LLM models does this support?</summary>
+      <div class="answer">
+        It's pluggable — supports Claude (via API or CLI), OpenAI, Google Gemini, and Ollama (local models). The system auto-detects what's available from environment variables. You can route different pipeline phases to different models (e.g., cheap/fast Sonnet for filtering, expensive/thorough Opus for analysis). If no LLM is configured, it falls back to keyword-only mode.
+      </div>
+    </details>
+
+    <details>
+      <summary>Does the system merge PRs or create issues automatically?</summary>
+      <div class="answer">
+        No. The system creates <em>draft</em> PRs and issues, then puts them in an approval queue. A human (that's us) reviews and decides whether to merge or close. The AI does the research and drafting work; humans make the final call. This is by design — we don't want autonomous PR merging for chaos test infrastructure.
+      </div>
+    </details>
+
+    <details>
+      <summary>How do I add a new domain agent?</summary>
+      <div class="answer">
+        <ol>
+          <li>Create a new file in <code>src/agents/</code> (e.g., <code>my_agent.py</code>)</li>
+          <li>Inherit from <code>BaseDomainAgent</code> — it gives you the full pipeline for free</li>
+          <li>Add your component mapping in <code>src/knowledge/component_map.py</code></li>
+          <li>Register the agent in <code>AGENT_CLASSES</code> in <code>src/main.py</code></li>
+          <li>Write tests in <code>tests/unit/</code></li>
+        </ol>
+        You mainly just define which OCPBUGS components your agent covers.
+      </div>
+    </details>
+
+    <details>
+      <summary>What's the cost per run?</summary>
+      <div class="answer">
+        After recent optimization: ~$0.67 per full run (all 6 agents) with LLM. Without LLM (keyword-only mode): essentially free. The main cost drivers are LLM calls during FILTER and ANALYZE phases. We minimize costs with the 3-tier filter (keywords → cache → LLM) so the LLM is only called for ambiguous cases.
+      </div>
+    </details>
+
+    <details>
+      <summary>What's a "scenario" in krkn context?</summary>
+      <div class="answer">
+        A scenario is a YAML config file that tells krkn what failure to inject. For example, a pod disruption scenario might say: "In namespace X, kill pods matching label Y, wait Z seconds, verify they recover." Scenario types include: pod_disruption, node, network_chaos, resource_stress (hog), PVC (disk fill), time_skew, and cloud_provider. Each scenario maps to a krkn plugin that does the actual injection.
+      </div>
+    </details>
+
+    <details>
+      <summary>What's a "frozen dataclass" and why does everything use them?</summary>
+      <div class="answer">
+        Python's <code>@dataclass(frozen=True)</code> makes instances immutable — you can't change their fields after creation. We use them for all domain models (Bug, FilterResult, GapAnalysis, etc.) because: (1) it prevents accidental mutations as data flows through the pipeline, (2) frozen objects are hashable and safe to use as dict keys or set members, (3) it makes the data flow explicit — you always create new objects rather than modifying existing ones.
+      </div>
+    </details>
+
+    <details>
+      <summary>What should I work on first?</summary>
+      <div class="answer">
+        Start by running the unit tests and understanding the data flow. Then try a single-agent run with <code>--agent control_plane</code> and read the output. Good first contributions: (1) improving keyword lists in the filter, (2) adding tests for edge cases, (3) improving the approval queue formatting, (4) adding a new domain agent for components you're interested in.
+      </div>
+    </details>
+
+    <details>
+      <summary>What testing framework do we use?</summary>
+      <div class="answer">
+        pytest with pytest-cov for coverage. Tests are in <code>tests/unit/</code> and <code>tests/integration/</code>. We target 80%+ coverage. Run with <code>PYTHONPATH=. pytest tests/unit/ -v</code>. Integration tests require Neo4j running (<code>docker compose up -d neo4j</code>).
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- SECTION 11: DAY 1 CHECKLIST -->
+<section id="day1">
+  <h2><span class="num">11</span> Day 1 Checklist</h2>
+
+  <ul class="checklist">
+    <li><span class="check"></span> <strong>Read</strong> <code>CLAUDE.md</code> in the repo root — it's the full project map</li>
+    <li><span class="check"></span> <strong>Set up</strong> the dev environment: <code>python3 -m venv venv && pip install -e ".[dev]"</code></li>
+    <li><span class="check"></span> <strong>Run tests:</strong> <code>PYTHONPATH=. pytest tests/unit/ -v</code> — all should pass</li>
+    <li><span class="check"></span> <strong>Read</strong> <code>src/models.py</code> — understand the core data structures</li>
+    <li><span class="check"></span> <strong>Read</strong> <code>src/agents/base_agent.py</code> — understand the pipeline</li>
+    <li><span class="check"></span> <strong>Read</strong> <code>src/filter/chaos_filter.py</code> — understand the filter logic</li>
+    <li><span class="check"></span> <strong>Start Neo4j:</strong> <code>docker compose up -d neo4j</code> — explore at <code>localhost:7474</code></li>
+    <li><span class="check"></span> <strong>Run a single agent:</strong> <code>PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane</code></li>
+    <li><span class="check"></span> <strong>Explore the output</strong> — understand what bugs were found, filtered, and what gaps were identified</li>
+    <li><span class="check"></span> <strong>Ask questions!</strong> Don't hesitate — this system touches many domains (chaos eng, AI/ML, graph DBs, OpenShift internals)</li>
+  </ul>
+
+  <div class="callout tip">
+    <strong>Pro Tip</strong>
+    Start with the keyword filter (<code>chaos_filter.py</code>), not the LLM filter. It's simpler, runs instantly, and teaches you the core decision: "Is this bug describing a failure mode that krkn can inject?" Once you understand that question intuitively, the rest of the system makes sense.
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <p>krkn-chaos-coordinator &mdash; Project Overview &mdash; Generated May 2026</p>
+  <p style="margin-top:4px;font-size:0.9em;">See CLAUDE.md in the repo root for developer instructions.</p>
+</footer>
+
+</body>
+</html>

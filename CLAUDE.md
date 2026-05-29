@@ -73,6 +73,10 @@ Not every bug needs a chaos test. The filter checks:
 ### Component Mapping
 Uses `team_component_map.json` from openshift-eng/ai-helpers for authoritative OCPBUGS component names.
 
+## Documentation
+
+- [Project Overview](docs/project-overview.html) — Interactive visual guide covering architecture, pipeline, filter system, knowledge layer, and FAQ. Open in a browser.
+
 ## Dependencies
 
 - Python 3.11+
