@@ -138,8 +138,15 @@ class TestClaudeCodeCallLlm:
 
     @patch("subprocess.run")
     def test_calls_claude_cli_with_correct_args(self, mock_run: MagicMock) -> None:
+        import json
+        cli_output = json.dumps({
+            "result": '{"relevant": true}',
+            "usage": {"input_tokens": 100, "output_tokens": 20,
+                      "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+            "total_cost_usd": 0.001,
+        })
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout='{"relevant": true}', stderr="",
+            args=[], returncode=0, stdout=cli_output, stderr="",
         )
         from src.filter.llm_filter import call_llm
 
@@ -159,13 +166,16 @@ class TestClaudeCodeCallLlm:
         assert "--model" in cmd
         assert "claude-sonnet-4-6" in cmd
         assert "--output-format" in cmd
-        assert "text" in cmd
+        assert "json" in cmd
         assert result == '{"relevant": true}'
 
     @patch("subprocess.run")
     def test_flattens_system_and_user_messages(self, mock_run: MagicMock) -> None:
+        import json
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="ok", stderr="",
+            args=[], returncode=0,
+            stdout=json.dumps({"result": "ok", "usage": {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}, "total_cost_usd": 0}),
+            stderr="",
         )
         from src.filter.llm_filter import call_llm
 
@@ -197,8 +207,11 @@ class TestClaudeCodeCallLlm:
 
     @patch("subprocess.run")
     def test_strips_whitespace_from_output(self, mock_run: MagicMock) -> None:
+        import json
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="  trimmed response  \n", stderr="",
+            args=[], returncode=0,
+            stdout=json.dumps({"result": "  trimmed response  ", "usage": {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}, "total_cost_usd": 0}),
+            stderr="",
         )
         from src.filter.llm_filter import call_llm
 
@@ -210,8 +223,11 @@ class TestClaudeCodeCallLlm:
 
     @patch("subprocess.run")
     def test_timeout_set_to_120_seconds(self, mock_run: MagicMock) -> None:
+        import json
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="ok", stderr="",
+            args=[], returncode=0,
+            stdout=json.dumps({"result": "ok", "usage": {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}, "total_cost_usd": 0}),
+            stderr="",
         )
         from src.filter.llm_filter import call_llm
 
@@ -222,3 +238,29 @@ class TestClaudeCodeCallLlm:
 
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs.get("timeout") == 120
+
+    @patch("subprocess.run")
+    def test_accumulates_token_usage(self, mock_run: MagicMock) -> None:
+        import json
+        from src.filter.llm_filter import call_llm, get_token_usage, reset_token_usage
+
+        reset_token_usage()
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=json.dumps({
+                "result": "ok",
+                "usage": {"input_tokens": 150, "output_tokens": 30,
+                          "cache_creation_input_tokens": 500, "cache_read_input_tokens": 0},
+                "total_cost_usd": 0.0023,
+            }),
+            stderr="",
+        )
+
+        call_llm(messages=[{"role": "user", "content": "test"}], config=self._claude_code_config())
+        usage = get_token_usage()
+
+        assert usage["input_tokens"] == 650
+        assert usage["output_tokens"] == 30
+        assert usage["total_tokens"] == 680
+        assert usage["cost_usd"] == 0.0023
+        assert usage["call_count"] == 1

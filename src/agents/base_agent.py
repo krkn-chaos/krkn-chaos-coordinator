@@ -11,6 +11,7 @@ from src.apis.jira_client import JiraClient
 from src.apis.sippy_client import SippyClient
 from src.apis.github_client import GitHubClient
 from src.filter.chaos_filter import filter_bug, filter_bugs
+from src.filter.llm_filter import get_token_usage, reset_token_usage
 from src.filter.llm_tools import filter_bug_llm, map_match_llm, analyze_gap_llm
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.component_map import get_components_for_agent
@@ -78,6 +79,7 @@ class BaseDomainAgent(ABC):
         """Execute the full pipeline: DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER."""
         logger.info("=== %s agent starting ===", self.agent_name)
         self._slog.clear()
+        reset_token_usage()
         metrics = RunMetrics()
 
         # DISCOVER
@@ -129,8 +131,17 @@ class BaseDomainAgent(ABC):
 
         # REMEMBER
         self._remember(result)
+
+        usage = get_token_usage()
+        metrics.total_input_tokens = usage["input_tokens"]
+        metrics.total_output_tokens = usage["output_tokens"]
         self._store_metrics(metrics)
 
+        logger.info(
+            "TOKEN USAGE: %d input + %d output = %d total, cost=$%.4f, calls=%d",
+            usage["input_tokens"], usage["output_tokens"],
+            usage["total_tokens"], usage["cost_usd"], usage["call_count"],
+        )
         logger.info("=== %s agent complete ===", self.agent_name)
         return result
 

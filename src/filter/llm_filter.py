@@ -9,10 +9,52 @@ from __future__ import annotations
 import json
 import logging
 
+from dataclasses import dataclass, field
+
 from src.filter.llm_config import LLMBackendConfig, LLMProvider, detect_llm_backend
 from src.models import Bug, FilterResult
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Token usage accumulator (module-level, reset per run)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _UsageAccumulator:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    call_count: int = 0
+
+_usage = _UsageAccumulator()
+
+
+def _accumulate_usage(input_tokens: int, output_tokens: int, cost_usd: float) -> None:
+    _usage.input_tokens += input_tokens
+    _usage.output_tokens += output_tokens
+    _usage.cost_usd += cost_usd
+    _usage.call_count += 1
+
+
+def get_token_usage() -> dict:
+    """Return accumulated token usage since last reset."""
+    return {
+        "input_tokens": _usage.input_tokens,
+        "output_tokens": _usage.output_tokens,
+        "total_tokens": _usage.input_tokens + _usage.output_tokens,
+        "cost_usd": round(_usage.cost_usd, 4),
+        "call_count": _usage.call_count,
+    }
+
+
+def reset_token_usage() -> None:
+    """Reset the accumulator (call at start of each run)."""
+    _usage.input_tokens = 0
+    _usage.output_tokens = 0
+    _usage.cost_usd = 0.0
+    _usage.call_count = 0
 
 SYSTEM_PROMPT = """You are a chaos engineering expert for OpenShift/Kubernetes clusters.
 Your job is to determine if a JIRA bug describes a failure mode that can be tested with chaos engineering tools (krkn).
@@ -67,6 +109,7 @@ def call_llm(
             in the messages list.
     """
     if config.provider == LLMProvider.CLAUDE_CODE:
+        import json as _json
         import subprocess
 
         effective_messages = _prepend_system_message(messages, system_prompt)
@@ -79,12 +122,27 @@ def call_llm(
         full_prompt = "\n\n".join(prompt_parts)
 
         result = subprocess.run(
-            ["claude", "-p", full_prompt, "--model", config.model, "--output-format", "text"],
+            ["claude", "-p", full_prompt, "--model", config.model, "--output-format", "json"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             raise RuntimeError(f"Claude Code CLI failed: {result.stderr[:200]}")
-        return result.stdout.strip()
+
+        try:
+            parsed = _json.loads(result.stdout)
+            text = parsed.get("result", "").strip()
+            usage = parsed.get("usage", {})
+            _accumulate_usage(
+                input_tokens=usage.get("input_tokens", 0)
+                    + usage.get("cache_creation_input_tokens", 0)
+                    + usage.get("cache_read_input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                cost_usd=parsed.get("total_cost_usd", 0.0),
+            )
+        except (_json.JSONDecodeError, KeyError):
+            text = result.stdout.strip()
+
+        return text
 
     elif config.provider == LLMProvider.OLLAMA:
         import ollama
