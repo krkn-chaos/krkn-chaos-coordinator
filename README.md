@@ -81,7 +81,17 @@ With `claude_code` provider: `--bare --system-prompt` strips 62K system prompt o
 
 ---
 
-## Setup Guide (New Users)
+## Quick Setup (one command)
+
+```bash
+git clone https://github.com/shahsahil264/krkn-chaos-coordinator.git
+cd krkn-chaos-coordinator
+./setup.sh
+```
+
+The setup script handles: Python venv, dependencies, krkn repo clone, `.env` creation, Neo4j container, and verification. Edit `.env` with your JIRA/GitHub tokens when prompted.
+
+## Manual Setup Guide (New Users)
 
 ### Step 1: Prerequisites
 
