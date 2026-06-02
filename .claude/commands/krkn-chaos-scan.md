@@ -66,13 +66,19 @@ for name, cfg in sorted(discover_agents().items()):
   - "30 days" — Full month (more thorough)
   - "60 days" — Deep scan (catches older unfixed bugs)
 
-**Question 4 — Max Bugs per Agent:**
-- Question: "Maximum bugs to fetch per agent?"
+**Question 4 — Scan Settings:**
+- Question: "What kind of scan?"
 - Options:
-  - "All bugs (Recommended)" — No limit, fetch everything (default: 2000)
-  - "50" — Quick scan, good for testing
-  - "100" — Moderate scan
-  - "500" — Large scan
+  - "Full scan (Recommended)" — All bugs, LLM enabled, complete analysis
+  - "Quick scan" — 50 bugs max, 7 days, LLM enabled (fast validation)
+  - "Deep scan" — All bugs, 60 days lookback, LLM enabled (thorough)
+  - "Keyword only" — All bugs, no LLM (fast, free, less accurate)
+
+Map selections to CLI flags:
+- "Full scan" → `--max-bugs 2000 --days 14 --use-llm`
+- "Quick scan" → `--max-bugs 50 --days 7 --use-llm`
+- "Deep scan" → `--max-bugs 2000 --days 60 --use-llm`
+- "Keyword only" → `--max-bugs 2000 --days 14` (no --use-llm)
 
 ## Running the Pipeline
 

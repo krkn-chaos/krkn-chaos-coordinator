@@ -13,6 +13,7 @@ from src.apis.github_client import GitHubClient
 from src.filter.chaos_filter import filter_bug, filter_bugs
 from src.filter.llm_filter import get_token_usage, reset_token_usage
 from src.filter.llm_tools import filter_bug_llm, map_match_llm, analyze_gap_llm
+from src.status import status, status_done
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.component_map import get_components_for_agent
 from src.knowledge.filter_cache import SemanticFilterCache
@@ -81,42 +82,47 @@ class BaseDomainAgent(ABC):
         self._slog.clear()
         reset_token_usage()
         metrics = RunMetrics()
+        name = self.agent_name
 
         # DISCOVER
+        status(name, "DISCOVER", "querying JIRA...")
         bugs = self._discover()
-        logger.info("DISCOVER: found %d bugs", len(bugs))
+        status(name, "DISCOVER", f"{len(bugs)} bugs, enriching z-streams...")
         bugs = self._enrich_with_changelog(bugs)
 
-        # Split into new vs known bugs
         known_keys = self._get_known_bugs()
         new_bugs = [b for b in bugs if b.key not in known_keys]
         known_bugs = [b for b in bugs if b.key in known_keys]
 
         if known_bugs:
-            logger.info("DISCOVER: %d known bugs — updating status", len(known_bugs))
             self._update_known_bugs(known_bugs)
 
-        if new_bugs:
-            logger.info("DISCOVER: %d new bugs to analyze", len(new_bugs))
-
         metrics.bugs_processed = len(new_bugs)
+        status_done(name, "DISCOVER", f"{len(bugs)} bugs ({len(new_bugs)} new, {len(known_bugs)} known)")
+        logger.info("DISCOVER: found %d bugs (%d new, %d known)", len(bugs), len(new_bugs), len(known_bugs))
 
         # FILTER
         filter_start = time.monotonic()
+        status(name, "FILTER", f"filtering {len(new_bugs)} bugs...")
         relevant, skipped = self._filter(new_bugs, metrics)
         metrics.filter_duration_sec = round(time.monotonic() - filter_start, 2)
+        status_done(name, "FILTER", f"{len(relevant)} relevant, {len(skipped)} skipped ({metrics.filter_duration_sec}s)")
         logger.info("FILTER: %d relevant, %d skipped", len(relevant), len(skipped))
 
         # MAP
         map_start = time.monotonic()
+        status(name, "MAP", f"matching {len(relevant)} bugs against scenarios...")
         matched, unmatched = self._map(relevant, metrics)
         metrics.map_duration_sec = round(time.monotonic() - map_start, 2)
+        status_done(name, "MAP", f"{len(matched)} covered, {len(unmatched)} gaps ({metrics.map_duration_sec}s)")
         logger.info("MAP: %d matched, %d unmatched", len(matched), len(unmatched))
 
         # ANALYZE
         analyze_start = time.monotonic()
+        status(name, "ANALYZE", f"analyzing {len(unmatched)} gaps...")
         gaps = self._analyze(unmatched, metrics)
         metrics.analyze_duration_sec = round(time.monotonic() - analyze_start, 2)
+        status_done(name, "ANALYZE", f"{len(gaps)} gaps scored ({metrics.analyze_duration_sec}s)")
         logger.info("ANALYZE: %d gaps identified", len(gaps))
 
         metrics.bugs_succeeded = len(relevant) + len(skipped)
@@ -130,12 +136,16 @@ class BaseDomainAgent(ABC):
         )
 
         # REMEMBER
+        status(name, "REMEMBER", "storing in Neo4j...")
         self._remember(result)
 
         usage = get_token_usage()
         metrics.total_input_tokens = usage["input_tokens"]
         metrics.total_output_tokens = usage["output_tokens"]
         self._store_metrics(metrics)
+
+        cost_str = f"${usage['cost_usd']:.2f}" if usage["cost_usd"] > 0 else "free"
+        status_done(name, "REMEMBER", f"done — {len(gaps)} gaps, {usage['call_count']} LLM calls, {cost_str}")
 
         logger.info(
             "TOKEN USAGE: %d input + %d output = %d total, cost=$%.4f, calls=%d",
@@ -247,7 +257,8 @@ class BaseDomainAgent(ABC):
                 still_needs_llm.append(bug)
 
         # Layer 3: LLM via typed tool
-        for bug in still_needs_llm:
+        for i, bug in enumerate(still_needs_llm):
+            status(self.agent_name, "FILTER", f"LLM {i+1}/{len(still_needs_llm)} — {bug.key}", i, len(still_needs_llm))
             components = bug.all_components or (bug.component,)
             ocp_docs = self.chroma.search_per_component(
                 components, bug.summary, collection="all", n_results=3,
@@ -286,8 +297,9 @@ class BaseDomainAgent(ABC):
         matched = []
         unmatched = []
 
-        for filter_result in relevant:
+        for i, filter_result in enumerate(relevant):
             bug = filter_result.bug
+            status(self.agent_name, "MAP", f"{i+1}/{len(relevant)} — {bug.key}", i, len(relevant))
             match, obs = self._find_scenario_match(bug, filter_result, metrics)
             self._slog.log_phase("map", obs.status, obs.summary, bug_key=bug.key)
 
@@ -369,8 +381,9 @@ class BaseDomainAgent(ABC):
     ) -> list[GapAnalysis]:
         gaps = []
 
-        for match in unmatched:
+        for i, match in enumerate(unmatched):
             bug = match.bug
+            status(self.agent_name, "ANALYZE", f"{i+1}/{len(unmatched)} — {bug.key}", i, len(unmatched))
 
             if self.use_llm:
                 components = bug.all_components or (bug.component,)
