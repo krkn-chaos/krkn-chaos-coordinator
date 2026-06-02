@@ -187,7 +187,7 @@ All configuration lives in `.env` (created by setup script). Full reference:
 cd ~/krkn-chaos-coordinator
 claude
 # Then type: /krkn-chaos-scan
-# Interactive: asks for OCP version + agent selection
+# Interactive: asks for OCP version, agents, lookback days, and scan type
 ```
 
 ### Option 2: CLI
@@ -211,6 +211,15 @@ PYTHONPATH=. python src/main.py --release 4.21
 # Custom lookback window
 PYTHONPATH=. python src/main.py --release 4.21 --use-llm --days 30
 ```
+
+Pipeline progress is shown via a status line:
+```
+[networking] ●●○○○○ FILTER   ████░░░░ 3/8 LLM 3/8 — OCPBUGS-86810
+[networking] ●●●●●● REMEMBER ████████ done — 2 gaps, 10 LLM calls, $0.27
+```
+
+In a terminal: colored with animated progress bars. In Claude Code: clean plain text.
+Verbose logs go to `krkn-chaos-coordinator.log` (not printed to screen).
 
 ### Option 3: Streamlit Dashboard
 
@@ -309,7 +318,8 @@ src/
 ├── main.py                        # CLI entry point (multi-version, multi-agent)
 ├── models.py                      # Domain models (Bug, Gap, Observation, RunMetrics)
 ├── reasoning.py                   # LLM reasoning for MAP + ANALYZE phases
-├── logging_util.py                # Structured JSON logging
+├── status.py                      # Pipeline status line (colored TTY / plain text piped)
+├── logging_util.py                # Structured JSON logging (writes to .log file)
 ├── coordinator/
 │   └── orchestrator.py            # Dedup, approval queue, run summary
 ├── agents/

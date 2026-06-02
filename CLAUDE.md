@@ -23,11 +23,14 @@ krkn-chaos-coordinator/
 │   │   └── ...
 │   └── filters/
 │       └── common.yaml            # Shared filter keywords (skip + chaos)
+│   └── filters/
+│       └── common.yaml            # Shared filter keywords (skip + chaos)
 ├── src/
 │   ├── main.py                    # Entry point (multi-version, multi-agent)
 │   ├── models.py                  # Domain models (Bug, Gap, Observation, RunMetrics)
 │   ├── reasoning.py               # LLM reasoning for MAP and ANALYZE
-│   ├── logging_util.py            # Structured JSON logging
+│   ├── status.py                  # Pipeline status line (colored TTY / plain piped)
+│   ├── logging_util.py            # Structured JSON logging (→ .log file)
 │   ├── coordinator/
 │   │   └── orchestrator.py        # Dedup, format, approval queue
 │   ├── agents/
@@ -70,8 +73,8 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 
-# Copy and fill in environment variables
-cp .env.example .env
+# Or run the setup script (handles everything interactively)
+./setup.sh
 
 # Start Neo4j (required)
 podman start neo4j-coordinator
@@ -90,6 +93,9 @@ PYTHONPATH=. python src/main.py --release 4.20,4.21 --agent control_plane,networ
 
 # All agents
 PYTHONPATH=. python src/main.py --release 4.21 --use-llm
+
+# Or use Claude Code interactive mode
+claude → /krkn-chaos-scan
 ```
 
 ## Adding a New Agent
