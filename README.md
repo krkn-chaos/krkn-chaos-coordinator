@@ -1,51 +1,77 @@
 # krkn-chaos-coordinator
 
-AI-driven multi-agent system that autonomously expands [krkn](https://github.com/krkn-chaos/krkn) chaos test coverage for OpenShift clusters by monitoring JIRA bugs and Sippy regressions, identifying coverage gaps, and creating PRs/issues.
+AI-driven multi-agent system that autonomously expands [krkn](https://github.com/krkn-chaos/krkn) chaos test coverage for OpenShift clusters by monitoring JIRA bugs, identifying coverage gaps, and creating PRs/issues.
+
+**Current stats (June 2026):** 3,000+ bugs analyzed, 465+ gaps identified, 188 tests passing, $0.18/run with claude_code provider.
 
 ## How It Works
 
 ```
 DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER
 
-1. DISCOVER   Query JIRA + Sippy for new bugs and regressions
-2. FILTER     Is this a failure mode krkn can chaos-test? (Claude Code / Ollama / keyword)
-3. MAP        Do we already have a scenario for this? (ChromaDB semantic search)
-4. ANALYZE    Score confidence, determine if scenario exists to extend
-5. ACT        Create GitHub issues or draft PRs with detailed next steps
-6. REMEMBER   Track analyzed bugs so they're not re-processed
+1. DISCOVER   Query JIRA (three-tier version matching) + z-stream changelogs
+2. FILTER     3-tier: keyword pre-filter → semantic cache → LLM classification
+3. MAP        ChromaDB RAG + LLM reasoning over existing krkn scenarios
+4. ANALYZE    Score confidence (0-100), generate specific krkn modifications
+5. ACT        Create GitHub issues (MEDIUM) or draft PRs (HIGH confidence)
+6. REMEMBER   Store in Neo4j graph — never re-analyze the same bug
 ```
 
 ## Architecture
 
 ```
-Orchestrator
-├── Upgrade & Lifecycle    (CVO, MCO, Installer)
-├── Control Plane          (etcd, kube-apiserver, scheduler)
-├── Node & Machine         (kubelet, Machine API, Cloud Compute)
-├── Networking             (OVN-K, DNS, router, ingress)
-├── Storage                (CSI, Image Registry)
-└── Operators & Platform   (OLM, Console, Auth, Monitoring)
+Orchestrator (dedup, approval queue)
+├── Control Plane          (Etcd, kube-apiserver, HyperShift)
+├── Networking             (OVN-K, DNS, router, SR-IOV, MetalLB)
+├── Node & Machine         (Kubelet, CRI-O, Machine API, Bare Metal)
+├── Storage                (CSI, Image Registry, LVMS)
+├── Operators & Platform   (OLM, Console, Auth, Monitoring, Cloud Compute)
+└── Upgrade & Lifecycle    (CVO, MCO, Installer variants)
 ```
 
-6 domain agents, each covering a set of OCPBUGS components. All share the same pipeline.
+6 domain agents covering 96 OCPBUGS components. All share the same pipeline.
 
-## Knowledge Base
+## Knowledge Layer
 
-4,089 chunks across 3 ChromaDB collections, pulled from GitHub:
+| Store | Purpose | Data |
+|-------|---------|------|
+| **ChromaDB** | Vector search (RAG context for LLM) | 4,089 chunks: krkn scenarios, krkn docs, OCP docs, filter cache |
+| **Neo4j** | Operational memory (dedup, history) | 3,000+ bugs, 465+ gaps, component relationships, run metrics |
 
-| Collection | Chunks | Sources |
-|-----------|--------|---------|
-| scenario_docs | 65 | krkn scenario YAMLs + plugin code |
-| krkn_docs | 750 | Website + krkn-hub + krkn-lib API + CLAUDE.md |
-| ocp_docs | 3,274 | OpenShift modules + topic assemblies |
+## LLM Providers
+
+5 pluggable backends, configurable per-phase:
+
+| Provider | Description |
+|----------|-------------|
+| `claude_code` | Claude Code CLI — no API key needed (default when `claude` is on PATH) |
+| `anthropic` | Direct API with prompt caching + batch API |
+| `ollama` | Local models, free, private |
+| `openai` | GPT-4o compatible |
+| `google` | Gemini compatible |
+
+Per-phase model routing: `LLM_FILTER_MODEL=claude-sonnet-4-6`, `LLM_ANALYZE_MODEL=claude-opus-4-6`
+
+## Token Optimization
+
+6-layer stack reduces cost by 91%:
+
+1. **Keyword pre-filter** — 167 chaos keywords, catches ~55% of bugs (zero tokens)
+2. **Semantic cache** — ChromaDB cosine similarity on past decisions (zero tokens)
+3. **Model routing** — Sonnet for FILTER/MAP, Opus for ANALYZE
+4. **Confidence escalation** — Sonnet → Opus only when uncertain (<80)
+5. **Prompt caching** — `cache_control` on system prompts (90% off)
+6. **Batch API** — 50% off, stacks with caching
+
+With `claude_code` provider: `--bare --system-prompt` strips 62K system prompt overhead → ~2,700 tokens per call.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Podman or Docker (for Neo4j)
-- Ollama with llama3 (optional, for LLM filter)
+- Podman (for Neo4j)
+- krkn repo cloned locally (required for scenario indexing)
 - JIRA API token + GitHub PAT
 
 ### Setup
@@ -55,6 +81,9 @@ Orchestrator
 git clone https://github.com/shahsahil264/krkn-chaos-coordinator.git
 cd krkn-chaos-coordinator
 
+# Clone krkn repo (required for MAP phase)
+git clone https://github.com/krkn-chaos/krkn ~/krkn
+
 # Virtual environment
 python3 -m venv venv
 source venv/bin/activate
@@ -62,9 +91,9 @@ pip install -e ".[dev]"
 
 # Environment variables
 cp .env.example .env
-# Edit .env with your JIRA_API_TOKEN, JIRA_USERNAME, GITHUB_TOKEN
+# Edit .env with: JIRA_API_TOKEN, JIRA_USERNAME, GITHUB_TOKEN, NEO4J_PASSWORD
 
-# Start Neo4j (optional, for Graphiti memory)
+# Start Neo4j (required)
 podman run -d --name neo4j-coordinator \
   -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/password \
@@ -82,93 +111,89 @@ PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data
 cd ~/krkn-chaos-coordinator
 claude
 # Then type: /run-scan
+# Interactive: asks for OCP version + agent selection
 ```
 
-Claude Code does the FILTER step with its own reasoning -- best quality.
+#### Option 2: CLI
 
-#### Option 2: Streamlit Dashboard
+```bash
+# Single agent, single version
+PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane --use-llm
+
+# Multiple agents
+PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane,networking --use-llm
+
+# Multiple versions
+PYTHONPATH=. python src/main.py --release 4.20,4.21 --use-llm
+
+# All agents, all defaults
+PYTHONPATH=. python src/main.py --release 4.21 --use-llm
+```
+
+#### Option 3: Streamlit Dashboard
 
 ```bash
 PYTHONPATH=. streamlit run src/ui/web_dashboard.py --server.port 8501
-# Open http://localhost:8501
-# Click "LAUNCH SCAN"
-```
-
-Web dashboard with Approve/Reject buttons, charts, and 7 tabs.
-
-#### Option 3: Terminal UI
-
-```bash
-PYTHONPATH=. python -m src.run_with_ui
-```
-
-Rich terminal dashboard with live pipeline animation.
-
-#### Option 4: CLI
-
-```bash
-# Single agent
-PYTHONPATH=. python src/main.py --release 4.21 --agent control_plane
-
-# All agents
-PYTHONPATH=. python src/main.py --release 4.21
 ```
 
 ### Run Tests
 
 ```bash
-PYTHONPATH=. pytest tests/unit/ -v        # 40 tests
-PYTHONPATH=. pytest tests/ -v --cov=src   # With coverage
+# Unit tests (no external deps, ~0.2s)
+PYTHONPATH=. pytest tests/unit/ -v                    # 175 tests
+
+# Integration tests (requires Neo4j)
+PYTHONPATH=. pytest tests/integration/ -v             # 13 tests
+
+# All tests
+PYTHONPATH=. pytest tests/ -v                         # 188 total
+
+# Run filter eval (Sonnet vs Haiku comparison)
+PYTHONPATH=. python -m src.evals.filter_eval --sample-size 20
 ```
 
 ## Project Structure
 
 ```
 src/
-├── main.py                        # CLI entry point
-├── models.py                      # Domain models
-├── run_with_ui.py                 # Terminal UI runner
-├── run_pipeline.py                # Pipeline runner (JSON input)
-├── run_filtered.py                # Pre-filtered pipeline (Claude Code mode)
-├── apis/
-│   ├── jira_client.py             # JIRA REST API
-│   ├── sippy_client.py            # Sippy regressions + health
-│   └── github_client.py           # GitHub API (issues, PRs)
-├── knowledge/
-│   ├── chromadb_store.py          # Vector search (3 collections)
-│   ├── component_map.py           # 6 agents → OCPBUGS components
-│   ├── scenario_index.py          # Index krkn scenario YAMLs
-│   ├── ingest.py                  # Full ingestion from GitHub
-│   └── memory.py                  # REMEMBER phase (JSON/Graphiti)
-├── filter/
-│   ├── chaos_filter.py            # Keyword-based filter
-│   └── llm_filter.py              # Ollama LLM filter
-├── agents/
-│   ├── base_agent.py              # Pipeline: DISCOVER→FILTER→MAP→ANALYZE
-│   ├── control_plane_agent.py     # Control Plane agent
-│   ├── upgrade_lifecycle_agent.py # Upgrade & Lifecycle agent
-│   ├── node_machine_agent.py      # Node & Machine agent
-│   ├── networking_agent.py        # Networking agent
-│   ├── storage_agent.py           # Storage agent
-│   ├── operators_platform_agent.py # Operators & Platform agent
-│   ├── act.py                     # GitHub issue creation
-│   ├── pr_creator.py              # Draft PR creation on forks
-│   ├── hub_generator.py           # krkn-hub boilerplate generator
-│   └── docs_generator.py          # Website docs generator
+├── main.py                        # CLI entry point (multi-version, multi-agent)
+├── models.py                      # Domain models (Bug, Gap, Observation, RunMetrics)
+├── reasoning.py                   # LLM reasoning for MAP + ANALYZE phases
+├── logging_util.py                # Structured JSON logging
 ├── coordinator/
-│   └── orchestrator.py            # Dedup, approval queue
+│   └── orchestrator.py            # Dedup, approval queue, run summary
+├── agents/
+│   ├── base_agent.py              # Pipeline: DISCOVER→FILTER→MAP→ANALYZE→ACT→REMEMBER
+│   ├── control_plane_agent.py     # + 5 other domain agents
+│   ├── pr_creator.py              # Draft PR creation
+│   ├── hub_generator.py           # krkn-hub boilerplate
+│   └── docs_generator.py          # Website docs
+├── apis/
+│   ├── jira_client.py             # JIRA REST API (three-tier version query)
+│   ├── sippy_client.py            # Sippy regressions + health
+│   ├── github_client.py           # GitHub API
+│   └── release_client.py          # Z-stream changelog enrichment
+├── knowledge/
+│   ├── chromadb_store.py          # Vector search (4 collections)
+│   ├── neo4j_store.py             # Graph memory (single backend)
+│   ├── component_map.py           # 6 agents → 96 OCPBUGS components
+│   ├── filter_cache.py            # Semantic cache (Cache-Aside pattern)
+│   ├── scenario_index.py          # Index krkn scenario YAMLs
+│   └── scenario_knowledgebase.py  # krkn-knowledgebase integration
+├── filter/
+│   ├── chaos_filter.py            # Keyword filter (167 keywords, confidence scoring)
+│   ├── llm_filter.py              # LLM filter (5 providers, token tracking)
+│   ├── llm_config.py              # Per-phase model routing + auto-detection
+│   ├── llm_tools.py               # Typed tool functions with Observation returns
+│   └── llm_batch.py               # Anthropic Batch API support
+├── evals/
+│   ├── filter_eval.py             # Model comparison eval
+│   ├── sampler.py                 # Stratified bug sampler
+│   └── eval_report.py             # Eval metrics + pass criteria
 └── ui/
     ├── terminal_ui.py             # Rich terminal dashboard
     └── web_dashboard.py           # Streamlit web dashboard
 ```
-
-## Filter Modes
-
-| Mode | Engine | Quality | Speed |
-|------|--------|---------|-------|
-| Claude Code (`/run-scan`) | Claude's reasoning | Best | Interactive |
-| Ollama (dashboard toggle) | llama3 local | Good | ~3-5s/bug |
-| Keyword (default) | Pattern matching | OK | Instant |
 
 ## ADR
 
