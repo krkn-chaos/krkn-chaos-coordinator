@@ -11,15 +11,18 @@ AI-driven multi-agent system that expands krkn chaos test coverage for OpenShift
 - **Pipeline**: DISCOVER → FILTER → MAP → ANALYZE → ACT → REMEMBER
 - **Knowledge**: ChromaDB (docs/scenarios) + Neo4j (operational memory graph)
 - **LLM**: 5 pluggable providers (claude_code, anthropic, ollama, openai, google) with per-phase model routing
+- **Filter keywords**: `config/filters/common.yaml` (shared) + per-agent overrides in agent YAML
 
 ## Repository Structure
 
 ```
 krkn-chaos-coordinator/
 ├── config/
-│   └── agents/                    # Drop a YAML file here to add a new agent
-│       ├── control_plane.yaml     # 6 built-in agents
-│       └── ...
+│   ├── agents/                    # Drop a YAML to add a new agent
+│   │   ├── control_plane.yaml     # 6 built-in (name, components, filter, docs)
+│   │   └── ...
+│   └── filters/
+│       └── common.yaml            # Shared filter keywords (skip + chaos)
 ├── src/
 │   ├── main.py                    # Entry point (multi-version, multi-agent)
 │   ├── models.py                  # Domain models (Bug, Gap, Observation, RunMetrics)
@@ -39,11 +42,12 @@ krkn-chaos-coordinator/
 │   │   ├── chromadb_store.py      # Vector search for docs
 │   │   ├── neo4j_store.py         # Graph memory (single backend, fail-fast)
 │   │   ├── component_map.py       # Delegates to registry for agent→component mapping
+│   │   ├── ingest.py              # Doc ingestion (GitHub, local, URL + agent-specific)
 │   │   ├── scenario_index.py      # Index krkn scenario YAML files
 │   │   ├── filter_cache.py        # Semantic filter cache (Cache-Aside)
 │   │   └── scenario_knowledgebase.py # krkn-knowledgebase integration
 │   ├── filter/
-│   │   ├── chaos_filter.py        # Keyword filter (167 keywords, confidence scoring)
+│   │   ├── chaos_filter.py        # Keyword filter (loads from config/filters/ + agent YAML)
 │   │   ├── llm_filter.py          # LLM filter (5 providers, token tracking)
 │   │   ├── llm_config.py          # Per-phase model routing + auto-detection
 │   │   ├── llm_tools.py           # Typed tool functions with Observation returns
@@ -72,6 +76,9 @@ cp .env.example .env
 # Start Neo4j (required)
 podman start neo4j-coordinator
 
+# Ingest knowledge base (one-time, includes agent-specific docs)
+PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data
+
 # Run tests
 PYTHONPATH=. pytest tests/ -v
 
@@ -85,10 +92,49 @@ PYTHONPATH=. python src/main.py --release 4.20,4.21 --agent control_plane,networ
 PYTHONPATH=. python src/main.py --release 4.21 --use-llm
 ```
 
+## Adding a New Agent
+
+Create a YAML file in `config/agents/`. No code changes needed.
+
+```yaml
+# config/agents/virtualization.yaml
+name: virtualization
+description: "OpenShift Virtualization / CNV / KubeVirt"
+components:
+  - "OpenShift Virtualization"
+  - "Virtualization / virt-controller"
+filter:
+  chaos_keywords:
+    - "vm migration failed"
+    - "virt-launcher crash"
+  skip_keywords:
+    - "cnv-must-gather"
+docs:
+  - type: github
+    owner: kubevirt
+    repo: kubevirt
+    path: docs
+  - type: local
+    path: ~/my-cnv-docs
+  - type: url
+    url: https://kubevirt.io/user-guide/architecture/
+```
+
+Then: `--agent virtualization --use-llm`. See [config/agents/README.md](config/agents/README.md).
+
 ## Key Concepts
 
+### Pluggable Configuration (all YAML, no code changes)
+
+| What | Where |
+|------|-------|
+| Agent definition | `config/agents/<name>.yaml` — components, filter keywords, docs |
+| Common filter keywords | `config/filters/common.yaml` — shared skip + chaos keywords |
+| Agent filter keywords | `config/agents/<name>.yaml` → `filter:` section (merged with common) |
+| Agent docs | `config/agents/<name>.yaml` → `docs:` section (github/local/url) |
+
 ### Three-Tier FILTER
-1. **Keyword pre-filter** — 167 chaos keywords, catches ~55% (zero tokens)
+1. **Keyword pre-filter** — loaded from `config/filters/common.yaml` + agent overrides, catches ~55% (zero tokens)
 2. **Semantic cache** — ChromaDB cosine similarity on past decisions (zero tokens)
 3. **LLM classification** — Sonnet with auto-escalation to Opus when confidence < 80
 
@@ -103,9 +149,6 @@ When `--release 4.21` is set:
 - 40-69 (MEDIUM): GitHub issue with recommendation
 - 0-39 (LOW): GitHub issue describing gap
 
-### Component Mapping
-Uses `team_component_map.json` from openshift-eng/ai-helpers for authoritative OCPBUGS component names. 96 components mapped across 6 agents.
-
 ### Token Optimization
 claude_code provider uses `--bare --system-prompt --exclude-dynamic-system-prompt-sections` to strip Claude Code's 62K system prompt overhead. Per-call: ~2,700 tokens. Per-call usage logged: `LLM CALL #N: X in + Y out = Z tokens, $cost`.
 
@@ -113,6 +156,8 @@ claude_code provider uses `--bare --system-prompt --exclude-dynamic-system-promp
 
 - [Project Overview](docs/presentation.html) — Interactive visual guide (open in browser)
 - [Design Spec](docs/superpowers/specs/2026-05-08-memory-and-token-optimization-design.md) — Full architecture spec
+- [Agent Config Guide](config/agents/README.md) — How to add new agents
+- [Filter Keywords Guide](config/filters/README.md) — How to customize filter keywords
 
 ## Dependencies
 
@@ -124,9 +169,9 @@ claude_code provider uses `--bare --system-prompt --exclude-dynamic-system-promp
 ## Testing
 
 ```bash
-PYTHONPATH=. pytest tests/unit/ -v              # 175 unit tests
+PYTHONPATH=. pytest tests/unit/ -v              # 187 unit tests
 PYTHONPATH=. pytest tests/integration/ -v       # 13 integration tests (requires Neo4j)
-PYTHONPATH=. pytest tests/ -v                   # All 188 tests
+PYTHONPATH=. pytest tests/ -v                   # All 200 tests
 
 # Run filter eval
 PYTHONPATH=. python -m src.evals.filter_eval --sample-size 20 --provider claude_code

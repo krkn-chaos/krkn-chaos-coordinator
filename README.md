@@ -26,7 +26,8 @@ Orchestrator (dedup, approval queue)
 ├── Node & Machine         (Kubelet, CRI-O, Machine API, Bare Metal)
 ├── Storage                (CSI, Image Registry, LVMS)
 ├── Operators & Platform   (OLM, Console, Auth, Monitoring, Cloud Compute)
-└── Upgrade & Lifecycle    (CVO, MCO, Installer variants)
+├── Upgrade & Lifecycle    (CVO, MCO, Installer variants)
+└── <your agent here>      (drop a YAML in config/agents/)
 ```
 
 Pluggable agents — auto-discovered from `config/agents/*.yaml`. 6 built-in agents covering 96 OCPBUGS components. Drop a YAML file to add a new domain.
@@ -35,7 +36,7 @@ Pluggable agents — auto-discovered from `config/agents/*.yaml`. 6 built-in age
 
 | Store | Purpose | Data |
 |-------|---------|------|
-| **ChromaDB** | Vector search (RAG context for LLM) | 4,089 chunks: krkn scenarios, krkn docs, OCP docs, filter cache |
+| **ChromaDB** | Vector search (RAG context for LLM) | 4,089+ chunks: krkn scenarios, krkn docs, OCP docs, agent-specific docs, filter cache |
 | **Neo4j** | Operational memory (dedup, history) | 3,000+ bugs, 465+ gaps, component relationships, run metrics |
 
 ## LLM Providers
@@ -56,7 +57,7 @@ Per-phase model routing: `LLM_FILTER_MODEL=claude-sonnet-4-6`, `LLM_ANALYZE_MODE
 
 6-layer stack reduces cost by 91%:
 
-1. **Keyword pre-filter** — 167 chaos keywords, catches ~55% of bugs (zero tokens)
+1. **Keyword pre-filter** — configurable keywords in `config/filters/common.yaml` + per-agent overrides, catches ~55% (zero tokens)
 2. **Semantic cache** — ChromaDB cosine similarity on past decisions (zero tokens)
 3. **Model routing** — Sonnet for FILTER/MAP, Opus for ANALYZE
 4. **Confidence escalation** — Sonnet → Opus only when uncertain (<80)
@@ -138,24 +139,56 @@ PYTHONPATH=. streamlit run src/ui/web_dashboard.py --server.port 8501
 
 ### Adding a New Agent
 
-Create a YAML file in `config/agents/`. No code changes needed.
+Create a single YAML file in `config/agents/`. No code changes needed.
 
 ```yaml
 # config/agents/virtualization.yaml
 name: virtualization
 description: "OpenShift Virtualization / CNV / KubeVirt"
+
+# JIRA components this agent monitors
 components:
   - "OpenShift Virtualization"
   - "Virtualization / virt-controller"
   - "Virtualization / virt-handler"
+
+# Domain-specific filter keywords (merged with common keywords)
+filter:
+  chaos_keywords:
+    - "vm migration failed"
+    - "virt-launcher crash"
+    - "live migrate timeout"
+  skip_keywords:
+    - "cnv-must-gather"
+
+# Domain-specific docs for ChromaDB (improves LLM reasoning)
+docs:
+  - type: github
+    owner: kubevirt
+    repo: kubevirt
+    path: docs
+  - type: local
+    path: ~/my-cnv-docs
+  - type: url
+    url: https://kubevirt.io/user-guide/architecture/
 ```
 
-Then run:
+Then:
 ```bash
+# Ingest docs (if you added a docs section)
+PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data
+
+# Run the agent
 PYTHONPATH=. python src/main.py --release 4.21 --agent virtualization --use-llm
 ```
 
-See [config/agents/README.md](config/agents/README.md) for details and how to find OCPBUGS component names.
+See [config/agents/README.md](config/agents/README.md) for full reference.
+
+### Customizing Filter Keywords
+
+Common keywords shared across all agents live in `config/filters/common.yaml`. Agent-specific keywords are added via the `filter` section in each agent's YAML and merged on top of common keywords at runtime.
+
+See [config/filters/README.md](config/filters/README.md) for details.
 
 ### Run Tests
 
@@ -177,13 +210,15 @@ PYTHONPATH=. python -m src.evals.filter_eval --sample-size 20
 
 ```
 config/
-└── agents/                        # Drop a YAML file here to add a new agent
-    ├── control_plane.yaml
-    ├── networking.yaml
-    ├── node_machine.yaml
-    ├── storage.yaml
-    ├── operators_platform.yaml
-    └── upgrade_lifecycle.yaml
+├── agents/                        # Drop a YAML file here to add a new agent
+│   ├── control_plane.yaml         # 6 built-in agents (name, components, filter, docs)
+│   ├── networking.yaml
+│   ├── node_machine.yaml
+│   ├── storage.yaml
+│   ├── operators_platform.yaml
+│   └── upgrade_lifecycle.yaml
+└── filters/
+    └── common.yaml                # Shared filter keywords (skip + chaos)
 
 src/
 ├── main.py                        # CLI entry point (multi-version, multi-agent)
@@ -207,11 +242,12 @@ src/
 │   ├── chromadb_store.py          # Vector search (4 collections)
 │   ├── neo4j_store.py             # Graph memory (single backend)
 │   ├── component_map.py           # Delegates to registry for agent → component mapping
+│   ├── ingest.py                  # Doc ingestion (GitHub, local, URL + agent-specific)
 │   ├── filter_cache.py            # Semantic cache (Cache-Aside pattern)
 │   ├── scenario_index.py          # Index krkn scenario YAMLs
 │   └── scenario_knowledgebase.py  # krkn-knowledgebase integration
 ├── filter/
-│   ├── chaos_filter.py            # Keyword filter (167 keywords, confidence scoring)
+│   ├── chaos_filter.py            # Keyword filter (loads from config/filters/ + agent YAML)
 │   ├── llm_filter.py              # LLM filter (5 providers, token tracking)
 │   ├── llm_config.py              # Per-phase model routing + auto-detection
 │   ├── llm_tools.py               # Typed tool functions with Observation returns
