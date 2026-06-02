@@ -45,16 +45,18 @@ Before running the pipeline, ask the user two questions using AskUserQuestion:
 - Note: User can also type a custom comma-separated list like "4.20,4.21"
 
 **Question 2 — Agent Scope:**
+- First, discover available agents dynamically:
+```bash
+cd /Users/sahil/krkn-chaos-coordinator && PYTHONPATH=. /opt/homebrew/opt/python@3.11/bin/python3.11 -c "
+from src.agents.registry import discover_agents
+for name, cfg in sorted(discover_agents().items()):
+    print(f'{name}: {cfg.description}')
+"
+```
 - Question: "Which domain agent(s) should run?"
 - multiSelect: true
-- Options:
-  - "All agents (Recommended)" — Run all 6 agents
-  - "control_plane" — Etcd, API Server, Scheduler, HyperShift
-  - "networking" — OVN, DNS, Ingress, SR-IOV, MetalLB
-  - "node_machine" — Kubelet, CRI-O, Machine API, Bare Metal
-  - "storage" — CSI, Local Storage, Image Registry, LVMS
-  - "operators_platform" — OLM, Console, Monitoring, Auth, Cloud Compute
-  - "upgrade_lifecycle" — CVO, MCO, Installer variants
+- Options: "All agents (Recommended)" plus one option per discovered agent (use name and description from the output above)
+- Note: Agents are auto-discovered from config/agents/*.yaml — new agents appear here automatically
 
 ## Running the Pipeline
 

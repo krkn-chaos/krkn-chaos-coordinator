@@ -1,0 +1,28 @@
+name: operators_platform
+description: OLM, Console, Monitoring, Auth, Cloud Compute
+components:
+- OLM
+- OLM / OperatorHub
+- Console
+- Management Console
+- Dev Console
+- Authentication
+- Monitoring
+- Logging
+- Observability UI
+- Insights Operator
+- must-gather
+- Cloud Credential Operator
+- Cloud Compute / Cloud Controller Manager
+- Cloud Compute / Cluster API Providers
+- Cloud Compute / OpenStack Provider
+- Cloud Compute / IBM Provider
+- Cloud Compute / KubeVirt Provider
+- Cloud Compute / Nutanix Provider
+- Cloud Compute / Libvirt Provider
+- Cloud Compute / ControlPlaneMachineSet
+- Cloud Compute / Machine CSR Approver
+- Cloud Compute / MachineHealthCheck
+- oc
+- Build
+- Samples Operator

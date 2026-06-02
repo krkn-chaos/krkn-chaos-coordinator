@@ -1,0 +1,23 @@
+name: networking
+description: OVN-Kubernetes, DNS, Ingress, SR-IOV, MetalLB, Multus
+components:
+- Networking / ovn-kubernetes
+- Networking / cluster-network-operator
+- Networking / DNS
+- Networking / router
+- Networking / ptp
+- Networking / multus
+- Networking / SR-IOV
+- Networking / Metal LB
+- Networking / FRR-K8s
+- Networking / On-Prem Host Networking
+- Networking / On-Prem Load Balancer
+- Networking / networking-console-plugin
+- Networking / network-tools
+- Networking / runtime-cfg
+- Networking / cloud-network-config-controller
+- Networking / kubernetes-nmstate-operator
+- Networking / nmstate-console-plugin
+- Networking / DPU
+- networking-ingress-commatrix
+- MicroShift / Networking

@@ -1,0 +1,14 @@
+name: storage
+description: CSI drivers, Local Storage, Image Registry, LVMS
+components:
+- Storage
+- Storage / Operators
+- Storage / Kubernetes
+- Storage / Kubernetes External Components
+- Storage / kubernetes-csi-driver-manila
+- Storage / Local Storage Operator
+- Image Registry
+- Logical Volume Manager Storage
+- Secrets Store CSI driver
+- kube-storage-version-migrator
+- OLM / Registry

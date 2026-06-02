@@ -7,15 +7,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.agents.base_agent import BaseDomainAgent
+from src.agents.registry import discover_agents
 from src.apis.jira_client import JiraClient, JiraConfig
 from src.apis.sippy_client import SippyClient
 from src.apis.github_client import GitHubClient
-from src.agents.control_plane_agent import ControlPlaneAgent
-from src.agents.upgrade_lifecycle_agent import UpgradeLifecycleAgent
-from src.agents.node_machine_agent import NodeMachineAgent
-from src.agents.networking_agent import NetworkingAgent
-from src.agents.storage_agent import StorageAgent
-from src.agents.operators_platform_agent import OperatorsPlatformAgent
 from src.coordinator.orchestrator import deduplicate_gaps, format_approval_queue, format_summary
 from src.knowledge.chromadb_store import ChromaStore
 from src.knowledge.scenario_index import index_scenarios_from_repo
@@ -26,17 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-AGENT_CLASSES = {
-    "control_plane": ControlPlaneAgent,
-    "upgrade_lifecycle": UpgradeLifecycleAgent,
-    "node_machine": NodeMachineAgent,
-    "networking": NetworkingAgent,
-    "storage": StorageAgent,
-    "operators_platform": OperatorsPlatformAgent,
-}
-
 
 def main():
+    load_dotenv()
+
+    registered = discover_agents()
+    agent_names_str = ", ".join(sorted(registered.keys()))
+
     parser = argparse.ArgumentParser(description="krkn-chaos-coordinator")
     parser.add_argument(
         "--release", default="4.21",
@@ -46,7 +38,7 @@ def main():
         "--agent", default=None,
         help=(
             f"Agent(s) to run. Comma-separated for multiple (e.g. 'control_plane,networking'). "
-            f"'all' or omit for all agents. Available: {', '.join(AGENT_CLASSES.keys())}"
+            f"'all' or omit for all agents. Available: {agent_names_str}"
         ),
     )
     parser.add_argument(
@@ -60,11 +52,11 @@ def main():
         help="Enable LLM-enhanced filter/map/analyze (uses tiered model routing)",
     )
     parser.add_argument(
-        "--krkn-repo", default=str(Path.home() / "krkn"), help="Path to local krkn repo"
+        "--krkn-repo",
+        default=os.environ.get("KRKN_REPO_PATH", str(Path.home() / "krkn")),
+        help="Path to local krkn repo (env: KRKN_REPO_PATH)",
     )
     args = parser.parse_args()
-
-    load_dotenv()
 
     # Initialize API clients
     jira = JiraClient(
@@ -89,12 +81,12 @@ def main():
 
     if args.agent and args.agent.lower() != "all":
         agent_names = [a.strip() for a in args.agent.split(",") if a.strip()]
-        unknown = [a for a in agent_names if a not in AGENT_CLASSES]
+        unknown = [a for a in agent_names if a not in registered]
         if unknown:
-            print(f"Unknown agent(s): {', '.join(unknown)}. Available: {', '.join(AGENT_CLASSES.keys())}")
+            print(f"Unknown agent(s): {', '.join(unknown)}. Available: {agent_names_str}")
             return
     else:
-        agent_names = list(AGENT_CLASSES.keys())
+        agent_names = sorted(registered.keys())
 
     logger.info("Agent(s): %s", ", ".join(agent_names))
 
@@ -126,7 +118,7 @@ def main():
         }
 
         for agent_name in agent_names:
-            agent = AGENT_CLASSES[agent_name](**agent_kwargs)
+            agent = BaseDomainAgent(agent_name=agent_name, **agent_kwargs)
             result = agent.run()
             all_results.append(result)
 

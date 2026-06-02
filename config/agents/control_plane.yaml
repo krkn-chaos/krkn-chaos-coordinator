@@ -1,0 +1,23 @@
+name: control_plane
+description: Etcd, API Server, Scheduler, HyperShift, OAuth
+components:
+- kube-apiserver
+- Etcd
+- kube-controller-manager
+- kube-scheduler
+- openshift-apiserver
+- apiserver-auth
+- oauth-apiserver
+- oauth-proxy
+- openshift-controller-manager / controller-manager
+- route-controller-manager
+- service-ca
+- config-operator
+- HyperShift
+- HyperShift / ROSA
+- HyperShift / ARO
+- HyperShift / OCP Virtualization
+- HyperShift / OpenStack
+- HyperShift / GCP
+- HyperShift / Agent
+- Pod Autoscaler

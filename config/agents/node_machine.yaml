@@ -1,0 +1,25 @@
+name: node_machine
+description: Kubelet, CRI-O, Machine API, Bare Metal, Cluster Autoscaler
+components:
+- Node / Kubelet
+- Node / CRI-O
+- Node / CPU manager
+- Node Tuning Operator
+- Node Feature Discovery Operator
+- Cloud Compute
+- Machine API
+- Cloud Compute / Machine API Providers
+- Performance Addon Operator
+- Bare Metal Hardware Provisioning
+- Bare Metal Hardware Provisioning / baremetal-operator
+- Bare Metal Hardware Provisioning / ironic
+- Bare Metal Hardware Provisioning / OS Image Provider
+- Bare Metal Hardware Provisioning / cluster-baremetal-operator
+- Bare Metal Hardware Provisioning / cluster-api-provider
+- Installer / OpenShift on Bare Metal IPI
+- Installer / Single Node OpenShift
+- Two Node Fencing
+- Cluster Autoscaler
+- RHCOS
+- Multi-Arch / IBM P and Z
+- oc / node-image
