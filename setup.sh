@@ -111,16 +111,13 @@ if [ -z "$CONTAINER_ENGINE" ]; then
     warn "Neither podman nor docker found — skipping Neo4j setup"
     warn "Install podman: brew install podman"
 else
-    # Check if container exists
-    if $CONTAINER_ENGINE ps -a --format '{{.Names}}' 2>/dev/null | grep -q "neo4j-coordinator"; then
-        # Container exists — check if running
-        if $CONTAINER_ENGINE ps --format '{{.Names}}' 2>/dev/null | grep -q "neo4j-coordinator"; then
-            ok "Neo4j container is running"
-        else
-            info "Starting existing Neo4j container..."
-            $CONTAINER_ENGINE start neo4j-coordinator
-            ok "Neo4j started"
-        fi
+    # Check if container exists (running or stopped)
+    if $CONTAINER_ENGINE ps --format '{{.Names}}' 2>/dev/null | grep -q "^neo4j-coordinator$"; then
+        ok "Neo4j container is running"
+    elif $CONTAINER_ENGINE ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^neo4j-coordinator$"; then
+        info "Starting existing Neo4j container..."
+        $CONTAINER_ENGINE start neo4j-coordinator
+        ok "Neo4j started"
     else
         info "Creating Neo4j container..."
         $CONTAINER_ENGINE run -d --name neo4j-coordinator \
