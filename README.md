@@ -1,17 +1,18 @@
-<p align="center">
-  <h1 align="center">krkn-chaos-coordinator</h1>
-  <p align="center">
-    <b>AI-driven multi-agent system for autonomous chaos test coverage expansion</b>
-    <br/>
-    Monitors JIRA bugs · Identifies coverage gaps · Creates PRs & issues
-    <br/><br/>
-    <a href="config/agents/README.md"><img src="https://img.shields.io/badge/agents-pluggable-blue?style=flat-square" alt="Pluggable Agents"></a>
-    <a href="config/filters/README.md"><img src="https://img.shields.io/badge/filters-configurable-green?style=flat-square" alt="Configurable Filters"></a>
-    <img src="https://img.shields.io/badge/tests-200%20passing-brightgreen?style=flat-square" alt="Tests">
-    <img src="https://img.shields.io/badge/python-3.11%2B-yellow?style=flat-square" alt="Python">
-    <img src="https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square" alt="License">
-  </p>
-</p>
+<div align="center">
+
+# 🔥 krkn-chaos-coordinator
+
+**Autonomous chaos test coverage expansion for OpenShift**
+
+*Scans JIRA bugs → Finds krkn coverage gaps → Creates PRs & issues*
+
+[![Pluggable Agents](https://img.shields.io/badge/agents-pluggable-blue?style=for-the-badge)](config/agents/README.md)
+[![Configurable Filters](https://img.shields.io/badge/filters-configurable-green?style=for-the-badge)](config/filters/README.md)
+![Tests](https://img.shields.io/badge/tests-200%20passing-brightgreen?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3.11%2B-yellow?style=for-the-badge)
+![License](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=for-the-badge)
+
+</div>
 
 ---
 
