@@ -60,6 +60,14 @@ def main():
         default=os.environ.get("KRKN_REPO_PATH", str(Path.home() / "krkn")),
         help="Path to local krkn repo (env: KRKN_REPO_PATH)",
     )
+    parser.add_argument(
+        "--refresh-docs", action="store_true", default=False,
+        help="Re-ingest ChromaDB knowledge base before running (pulls latest docs from GitHub)",
+    )
+    parser.add_argument(
+        "--parallel", action="store_true", default=False,
+        help="Run agents in parallel (faster, requires stable Neo4j connection)",
+    )
     args = parser.parse_args()
 
     # Initialize API clients
@@ -72,6 +80,18 @@ def main():
     )
     sippy = SippyClient()
     github = GitHubClient(token=os.environ.get("GITHUB_TOKEN", ""))
+
+    # Refresh docs if requested
+    if args.refresh_docs:
+        from src.status import status_done
+        from src.knowledge.ingest import run_full_ingestion
+        status_done("coordinator", "DISCOVER", "refreshing ChromaDB knowledge base...")
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if not token:
+            print("ERROR: GITHUB_TOKEN required for --refresh-docs")
+            return
+        results = run_full_ingestion(token, "./chroma_data")
+        status_done("coordinator", "DISCOVER", f"ingested {results['total']} chunks")
 
     # Initialize knowledge layer
     chroma = ChromaStore(persist_dir="./chroma_data")
@@ -109,7 +129,8 @@ def main():
 
     # Run each agent × release combination
     all_results = []
-    for release in releases:
+
+    def _run_agent(agent_name: str, release: str) -> 'AgentResult':
         agent_kwargs = {
             "jira": jira,
             "sippy": sippy,
@@ -120,11 +141,29 @@ def main():
             "neo4j_store": neo4j_store,
             "use_llm": args.use_llm,
         }
+        agent = BaseDomainAgent(agent_name=agent_name, **agent_kwargs)
+        return agent.run()
 
-        for agent_name in agent_names:
-            agent = BaseDomainAgent(agent_name=agent_name, **agent_kwargs)
-            result = agent.run()
-            all_results.append(result)
+    if args.parallel and len(agent_names) > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from src.status import status_done
+        status_done("coordinator", "DISCOVER", f"running {len(agent_names)} agents in parallel")
+
+        tasks = []
+        with ThreadPoolExecutor(max_workers=min(len(agent_names), 4)) as pool:
+            for release in releases:
+                for agent_name in agent_names:
+                    tasks.append(pool.submit(_run_agent, agent_name, release))
+
+            for future in as_completed(tasks):
+                try:
+                    all_results.append(future.result())
+                except Exception as e:
+                    logger.error("Agent failed: %s", e)
+    else:
+        for release in releases:
+            for agent_name in agent_names:
+                all_results.append(_run_agent(agent_name, release))
 
     # Orchestrator: deduplicate and format
     gaps = deduplicate_gaps(all_results)
