@@ -8,8 +8,10 @@ Auto-detects terminal vs piped output:
 from __future__ import annotations
 
 import sys
+import threading
 
 _IS_TTY = sys.stderr.isatty()
+_write_lock = threading.Lock()
 
 # Colors (only used in TTY mode)
 CYAN = "\033[0;36m"
@@ -70,19 +72,21 @@ def status(agent: str, phase: str, message: str, done: int = 0, total: int = 0) 
         progress = bar
 
     line = f"\r{DIM}[{NC}{BOLD}{agent}{NC}{DIM}]{NC} {dots} {color}{phase:8s}{NC} {progress} {message}"
-    sys.stderr.write(f"\033[2K{line}")
-    sys.stderr.flush()
+    with _write_lock:
+        sys.stderr.write(f"\033[2K{line}")
+        sys.stderr.flush()
 
 
 def status_done(agent: str, phase: str, message: str) -> None:
     """Print a completed status line. Colorful in TTY, plain in piped mode."""
-    if _IS_TTY:
-        dots = _dots(phase)
-        color = PHASE_COLORS.get(phase, NC)
-        bar = _bar(1, 1)
-        line = f"{DIM}[{NC}{BOLD}{agent}{NC}{DIM}]{NC} {dots} {color}{phase:8s}{NC} {bar} {GREEN}{message}{NC}"
-        sys.stderr.write(f"\033[2K\r{line}\n")
-        sys.stderr.flush()
-    else:
-        sys.stderr.write(f"[{agent}] {phase:8s} — {message}\n")
-        sys.stderr.flush()
+    with _write_lock:
+        if _IS_TTY:
+            dots = _dots(phase)
+            color = PHASE_COLORS.get(phase, NC)
+            bar = _bar(1, 1)
+            line = f"{DIM}[{NC}{BOLD}{agent}{NC}{DIM}]{NC} {dots} {color}{phase:8s}{NC} {bar} {GREEN}{message}{NC}"
+            sys.stderr.write(f"\033[2K\r{line}\n")
+            sys.stderr.flush()
+        else:
+            sys.stderr.write(f"[{agent}] {phase:8s} — {message}\n")
+            sys.stderr.flush()

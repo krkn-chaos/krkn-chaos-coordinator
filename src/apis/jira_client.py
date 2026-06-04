@@ -104,7 +104,7 @@ class JiraClient:
         max_results: int,
         priority_filter: bool,
     ) -> list[Bug]:
-        """Fetch bugs using three-tier version matching."""
+        """Fetch bugs using 4-tier version matching."""
         seen_keys: set[str] = set()
         all_bugs: list[Bug] = []
 

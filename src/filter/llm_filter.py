@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 from dataclasses import dataclass, field
 
@@ -29,16 +30,19 @@ class _UsageAccumulator:
     call_count: int = 0
 
 _usage = _UsageAccumulator()
+_usage_lock = threading.Lock()
 
 
 def _accumulate_usage(input_tokens: int, output_tokens: int, cost_usd: float) -> None:
-    _usage.call_count += 1
-    _usage.input_tokens += input_tokens
-    _usage.output_tokens += output_tokens
-    _usage.cost_usd += cost_usd
+    with _usage_lock:
+        _usage.call_count += 1
+        _usage.input_tokens += input_tokens
+        _usage.output_tokens += output_tokens
+        _usage.cost_usd += cost_usd
+        call_num = _usage.call_count
     logger.info(
         "LLM CALL #%d: %d in + %d out = %d tokens, $%.4f",
-        _usage.call_count, input_tokens, output_tokens,
+        call_num, input_tokens, output_tokens,
         input_tokens + output_tokens, cost_usd,
     )
 
@@ -137,7 +141,10 @@ def call_llm(
         if sys_parts:
             cmd.extend(["--system-prompt", "\n\n".join(sys_parts)])
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Claude Code CLI timed out after 120s")
         if result.returncode != 0:
             raise RuntimeError(f"Claude Code CLI failed: {result.stderr[:200]}")
 

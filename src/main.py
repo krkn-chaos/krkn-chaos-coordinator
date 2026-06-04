@@ -218,23 +218,26 @@ def _prompt_github_issues(gaps: list, github: GitHubClient) -> None:
     owner = os.environ.get("GITHUB_FORK_OWNER", "shahsahil264")
     repo = "krkn"
 
-    print(f"\n  Creating {len(selected)} issue(s) on {owner}/{repo}...")
-    for i in selected:
-        gap = gaps[i]
-        title = build_issue_title(gap)
-        body = build_issue_body(gap, agent_name="coordinator")
+    try:
+        print(f"\n  Creating {len(selected)} issue(s) on {owner}/{repo}...")
+        for i in selected:
+            gap = gaps[i]
+            title = build_issue_title(gap)
+            body = build_issue_body(gap, agent_name="coordinator")
 
-        result = github.create_issue(
-            owner=owner,
-            repo=repo,
-            title=title,
-            body=body,
-            labels=[LABEL],
-        )
-        if result:
-            print(f"  ✓ {gap.bug.key}: {result.get('html_url', 'created')}")
-        else:
-            print(f"  ✗ {gap.bug.key}: failed to create issue")
+            result = github.create_issue(
+                owner=owner,
+                repo=repo,
+                title=title,
+                body=body,
+                labels=[LABEL],
+            )
+            if result:
+                print(f"  ✓ {gap.bug.key}: {result.get('html_url', 'created')}")
+            else:
+                print(f"  ✗ {gap.bug.key}: failed to create issue")
+    except KeyboardInterrupt:
+        print("\n  Issue creation interrupted.")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ with agent-specific keywords from config/agents/<name>.yaml.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 import yaml
@@ -29,28 +30,30 @@ _AGENTS_DIR = Path(__file__).parent.parent.parent / "config" / "agents"
 # ---------------------------------------------------------------------------
 
 _common_cache: dict | None = None
+_cache_lock = threading.Lock()
 
 
 def _load_common_filters() -> dict:
     """Load common filter keywords from config/filters/common.yaml, cached."""
     global _common_cache
-    if _common_cache is not None:
+    with _cache_lock:
+        if _common_cache is not None:
+            return _common_cache
+
+        path = _FILTERS_DIR / "common.yaml"
+        if not path.exists():
+            logger.warning("Common filter config not found at %s, using empty", path)
+            _common_cache = {"skip_keywords": [], "chaos_keywords": []}
+            return _common_cache
+
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+
+        _common_cache = {
+            "skip_keywords": [str(k) for k in data.get("skip_keywords", [])],
+            "chaos_keywords": [str(k) for k in data.get("chaos_keywords", [])],
+        }
         return _common_cache
-
-    path = _FILTERS_DIR / "common.yaml"
-    if not path.exists():
-        logger.warning("Common filter config not found at %s, using empty", path)
-        _common_cache = {"skip_keywords": [], "chaos_keywords": []}
-        return _common_cache
-
-    with open(path) as f:
-        data = yaml.safe_load(f) or {}
-
-    _common_cache = {
-        "skip_keywords": [str(k) for k in data.get("skip_keywords", [])],
-        "chaos_keywords": [str(k) for k in data.get("chaos_keywords", [])],
-    }
-    return _common_cache
 
 
 def _load_agent_filter(agent_name: str) -> dict:
