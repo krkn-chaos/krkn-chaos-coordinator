@@ -68,16 +68,7 @@ def main():
         "--parallel", action="store_true", default=False,
         help="Run agents in parallel (faster, requires stable Neo4j connection)",
     )
-    parser.add_argument(
-        "--test-filter", type=str, default=None, metavar="SUMMARY",
-        help="Test the filter against a bug summary (e.g., --test-filter 'etcd OOM under load')",
-    )
     args = parser.parse_args()
-
-    # Quick filter test mode
-    if args.test_filter:
-        _test_filter(args.test_filter, args.agent)
-        return
 
     # Initialize API clients
     jira = JiraClient(
@@ -186,38 +177,6 @@ def main():
         _prompt_github_issues(gaps, github)
     else:
         print("No chaos test coverage gaps identified.")
-
-
-def _test_filter(summary: str, agent_name: str | None = None) -> None:
-    """Test the filter against a bug summary string."""
-    from src.filter.chaos_filter import filter_bug, get_filter_keywords
-    from src.models import Bug
-
-    agents_to_test = [agent_name] if agent_name else [None]
-    if agent_name and agent_name.lower() == "all":
-        from src.agents.registry import discover_agents
-        agents_to_test = sorted(discover_agents().keys())
-
-    bug = Bug(
-        key="TEST-0", summary=summary, description=summary,
-        component="test", priority="Major", status="New", created="", url="",
-    )
-
-    for name in agents_to_test:
-        skip, chaos = get_filter_keywords(name)
-        result = filter_bug(bug, agent_name=name)
-        label = name or "common"
-
-        if result.chaos_relevant:
-            print(f"  ✓ [{label}] RELEVANT (confidence={result.confidence:.0%})")
-            print(f"    Failure mode: {result.failure_mode}")
-            print(f"    Injection: {result.injection_method}")
-        else:
-            print(f"  ✗ [{label}] SKIPPED (confidence={result.confidence:.0%})")
-            print(f"    Reason: {result.skip_reason}")
-
-        print(f"    Keywords: {len(skip)} skip, {len(chaos)} chaos")
-        print()
 
 
 def _prompt_github_issues(gaps: list, github: GitHubClient) -> None:
