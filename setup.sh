@@ -25,7 +25,7 @@ echo ""
 
 # ── Step 1: Check Python ──────────────────────────────────────
 
-echo -e "${CYAN}Step 1/7:${NC} Checking Python..."
+echo -e "${CYAN}Step 1/8:${NC} Checking Python..."
 
 PYTHON=""
 for candidate in python3.11 python3.12 python3.13 python3; do
@@ -51,7 +51,7 @@ fi
 # ── Step 2: Create virtual environment ────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 2/7:${NC} Setting up Python environment..."
+echo -e "${CYAN}Step 2/8:${NC} Setting up Python environment..."
 
 if [ -d "venv" ]; then
     warn "venv/ already exists — reusing"
@@ -70,7 +70,7 @@ ok "Installed all dependencies"
 # ── Step 3: Clone krkn repo ──────────────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 3/7:${NC} Checking krkn repo..."
+echo -e "${CYAN}Step 3/8:${NC} Checking krkn repo..."
 
 KRKN_PATH="${KRKN_REPO_PATH:-$HOME/krkn}"
 
@@ -97,7 +97,7 @@ fi
 # ── Step 4: Configure credentials ─────────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 4/7:${NC} Configuring credentials..."
+echo -e "${CYAN}Step 4/8:${NC} Configuring credentials..."
 
 NEEDS_EDIT=false
 
@@ -176,7 +176,7 @@ fi
 # ── Step 5: Start Neo4j ──────────────────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 5/7:${NC} Setting up Neo4j..."
+echo -e "${CYAN}Step 5/8:${NC} Setting up Neo4j..."
 
 CONTAINER_ENGINE=""
 if command -v podman &>/dev/null; then
@@ -228,7 +228,7 @@ fi
 # ── Step 6: Verify everything ─────────────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 6/7:${NC} Verifying connections..."
+echo -e "${CYAN}Step 6/8:${NC} Verifying connections..."
 
 # Check .env has real values
 HAS_JIRA=true
@@ -276,10 +276,62 @@ names = ', '.join(sorted(agents.keys()))
 print(f'  \033[0;32m✓\033[0m {len(agents)} agents discovered: {names}')
 " 2>/dev/null || true
 
-# ── Step 7: Run tests ─────────────────────────────────────────
+# ── Step 7: Knowledge base ingestion ──────────────────────────
 
 echo ""
-echo -e "${CYAN}Step 7/7:${NC} Running tests..."
+echo -e "${CYAN}Step 7/8:${NC} Checking knowledge base..."
+
+CHROMA_CHUNKS=$(PYTHONPATH=. python -c "
+from src.knowledge.chromadb_store import ChromaStore
+c = ChromaStore(persist_dir='./chroma_data')
+total = 0
+for name in ['scenario_docs', 'krkn_docs', 'ocp_docs']:
+    try:
+        total += c._client.get_collection(name).count()
+    except Exception:
+        pass
+print(total)
+" 2>/dev/null || echo "0")
+
+if [ "$CHROMA_CHUNKS" -gt 100 ] 2>/dev/null; then
+    ok "ChromaDB has $CHROMA_CHUNKS chunks (krkn scenarios, OCP docs, krkn docs)"
+else
+    warn "ChromaDB knowledge base is empty or minimal ($CHROMA_CHUNKS chunks)"
+    info "The knowledge base gives the LLM context about krkn scenarios and OCP architecture."
+    info "Without it, the FILTER/MAP/ANALYZE phases have no documentation to reason over."
+    echo ""
+
+    if [ "$HAS_GITHUB" = true ]; then
+        ask "Ingest knowledge base now? (~6 min) [Y/n]"
+        read -r ingest_answer
+        if [[ ! "$ingest_answer" =~ ^[Nn] ]]; then
+            info "Ingesting from GitHub (krkn scenarios, krkn docs, OCP docs)..."
+            PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data 2>/dev/null
+            NEW_CHUNKS=$(PYTHONPATH=. python -c "
+from src.knowledge.chromadb_store import ChromaStore
+c = ChromaStore(persist_dir='./chroma_data')
+total = 0
+for name in ['scenario_docs', 'krkn_docs', 'ocp_docs']:
+    try:
+        total += c._client.get_collection(name).count()
+    except Exception:
+        pass
+print(total)
+" 2>/dev/null || echo "0")
+            ok "Ingested $NEW_CHUNKS chunks into ChromaDB"
+        else
+            warn "Skipped — run later: PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data"
+        fi
+    else
+        warn "GitHub token not set — cannot ingest. Add GITHUB_TOKEN to .env, then run:"
+        echo "    PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data"
+    fi
+fi
+
+# ── Step 8: Run tests ─────────────────────────────────────────
+
+echo ""
+echo -e "${CYAN}Step 8/8:${NC} Running tests..."
 
 PYTHONPATH=. python -m pytest tests/unit/ -q --tb=no 2>/dev/null | tail -1 || true
 
@@ -295,6 +347,7 @@ echo "    • Python virtual environment (venv/)"
 echo "    • All Python dependencies installed"
 echo "    • krkn repo at $KRKN_PATH"
 echo "    • Neo4j database"
+echo "    • ChromaDB knowledge base (krkn scenarios, OCP docs)"
 echo "    • Environment variables (.env)"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
@@ -302,10 +355,7 @@ echo ""
 echo "    1. Activate the environment:"
 echo -e "       ${CYAN}source venv/bin/activate${NC}"
 echo ""
-echo "    2. Ingest the knowledge base (one-time, ~6 min):"
-echo -e "       ${CYAN}PYTHONPATH=. python -m src.knowledge.ingest ./chroma_data${NC}"
-echo ""
-echo "    3. Run the coordinator:"
+echo "    2. Run the coordinator:"
 echo -e "       ${CYAN}PYTHONPATH=. python src/main.py --release 4.21 --use-llm${NC}"
 echo ""
 echo "    Or use Claude Code:"
