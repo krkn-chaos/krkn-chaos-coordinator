@@ -88,8 +88,11 @@ cd /Users/sahil/krkn-chaos-coordinator && PYTHONPATH=. /opt/homebrew/opt/python@
   --agent <AGENT_OR_COMMA_LIST_OR_all> \
   --use-llm \
   --max-bugs <MAX_BUGS> \
-  --days <DAYS>
+  --days <DAYS> \
+  --parallel
 ```
+
+Note: Always include `--parallel` when running multiple agents (it's the default behavior for multi-agent runs). Only omit it for single-agent runs.
 
 **Examples:**
 - Single version, single agent: `--release 4.21 --agent control_plane`
