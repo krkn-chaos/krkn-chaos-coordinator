@@ -154,7 +154,7 @@ def _build_next_steps(gap: GapAnalysis) -> list[str]:
         steps.append(f"Suggested plugin: `{plugin}` — {config_hint}")
         steps.append("Determine if existing krkn-lib methods support this injection, or if new code is needed")
         steps.append("If extending: modify the existing YAML to add a new variant")
-        steps.append(f"If new plugin code is needed: implement in `{plugin}`, check `krkn-chaos/krkn-lib` for K8s helpers, ")
+        steps.append(f"If new plugin code is needed: implement in `{plugin}` and check `krkn-chaos/krkn-lib` for K8s helpers")
         steps.append("If new scenario: follow the plugin creation guide in `CLAUDE.md`")
     else:
         steps.append(f"Design a new chaos scenario for: **{_infer_failure_mode(gap)}**")
@@ -404,9 +404,10 @@ def create_issues_for_gaps(
             if result:
                 logger.info("Created issue: %s", result.get("html_url"))
                 results.append(result)
-                print(f"Created: {result.get('html_url', '?')}")
             else:
                 logger.error("Failed to create issue for %s", gap.bug.key)
-                print(f"Failed to create issue for {gap.bug.key}")
+            print(
+                f"Created: {result.get('html_url', '?')}" if result else "Failed"
+            )
 
     return results
