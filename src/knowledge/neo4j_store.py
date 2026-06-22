@@ -64,6 +64,33 @@ INVALID_BUG_PROPERTIES = {
     "filter_decision_reason": "use skip_reason",
 }
 
+# LLM-friendly method aliases — convenience only; canonical names are the values.
+METHOD_ALIASES: dict[str, str] = {
+    # query()
+    "run_query": "query",
+    "execute_query": "query",
+    "execute": "query",
+    "run_cypher": "query",
+    "cypher_query": "query",
+    # get_skipped_bugs()
+    "get_filtered_bugs": "get_skipped_bugs",
+    "get_filter_skipped_bugs": "get_skipped_bugs",
+    # get_chaos_relevant_bugs()
+    "get_relevant_bugs": "get_chaos_relevant_bugs",
+    "get_chaos_bugs": "get_chaos_relevant_bugs",
+    # describe_schema()
+    "get_schema": "describe_schema",
+}
+
+
+def _forwarding_method(canonical: str, alias: str):
+    def method(self, *args, **kwargs):
+        return getattr(self, canonical)(*args, **kwargs)
+
+    method.__name__ = alias
+    method.__doc__ = f"Alias for {canonical}(). Convenience for LLM-generated scripts."
+    return method
+
 
 class Neo4jStore:
     """Direct Neo4j knowledge graph — sync driver, no LLM."""
@@ -121,6 +148,13 @@ class Neo4jStore:
             "nodes": GRAPH_NODE_PROPERTIES,
             "relationships": GRAPH_RELATIONSHIPS,
             "invalid_property_names": INVALID_BUG_PROPERTIES,
+            "canonical_methods": {
+                "query": "run arbitrary Cypher (requires connect())",
+                "get_skipped_bugs": "bugs filtered out in FILTER",
+                "get_chaos_relevant_bugs": "bugs that passed FILTER",
+                "describe_schema": "this schema reference",
+            },
+            "method_aliases": METHOD_ALIASES,
         }
 
     def get_skipped_bugs(self) -> list[dict]:
@@ -582,3 +616,10 @@ class Neo4jStore:
     def close(self) -> None:
         if self._driver:
             self._driver.close()
+
+
+for _alias, _canonical in METHOD_ALIASES.items():
+    if _canonical == "describe_schema":
+        setattr(Neo4jStore, _alias, Neo4jStore.describe_schema)
+    else:
+        setattr(Neo4jStore, _alias, _forwarding_method(_canonical, _alias))

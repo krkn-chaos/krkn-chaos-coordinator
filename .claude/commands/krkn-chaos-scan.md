@@ -200,7 +200,9 @@ Agents are discovered dynamically. Each YAML defines: name, components, filter k
 
 **Do NOT use:** `is_chaos_relevant`, `filter_decision` — these do not exist. Use `chaos_relevant` and `skip_reason`.
 
-**Before custom Cypher:** `print(Neo4jStore.describe_schema())`
+**Before custom Cypher:** `print(Neo4jStore.describe_schema())` — lists property names and method aliases.
+
+**Custom Cypher:** `n.query('MATCH ... RETURN ...')` (aliases like `run_query`, `execute`, `run_cypher` also work)
 
 **Prefer typed helpers** (no property names to guess):
 - `n.get_skipped_bugs()` — bugs filtered out as not chaos-relevant
