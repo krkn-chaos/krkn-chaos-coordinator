@@ -21,9 +21,9 @@ skip_keywords:
   - "dependency update"
   - "[stub]"
   - "e2e test"
-  - “skopeo”
-  - “below the sea ui”
-  - “dpll pin”
+  - "skopeo"
+  - "below the sea ui"
+  - "dpll pin"
 
 
 chaos_keywords:
@@ -170,28 +170,26 @@ chaos_keywords:
   - "scale"
 
   # added words
-  - “AZ outage”
-  - “node crash”
-  - “network isolation”
-  - “node scaling”
-  - “pod deletion”
-  - “pod crash”
-  - “pod fail”
-  - “pod traffic”
-  - “shutdown”
-  - “traffic stop”
-  - “no traffic”
-  - “cpu pressure”
-  - “cpu saturation”
-  - “excess cpu”
-  - “memory contention”
-  - “memory saturation”
-  - “excess memory”
-  - “network down”
-  - “NIC failure”
-  - “could not resolve hostname”
-  - “loadbalancer”
-  - “pods restart”
-  - “revision rollout”
-
-
+  - "AZ outage"
+  - "node crash"
+  - "network isolation"
+  - "node scaling"
+  - "pod deletion"
+  - "pod crash"
+  - "pod fail"
+  - "pod traffic"
+  - "shutdown"
+  - "traffic stop"
+  - "no traffic"
+  - "cpu pressure"
+  - "cpu saturation"
+  - "excess cpu"
+  - "memory contention"
+  - "memory saturation"
+  - "excess memory"
+  - "network down"
+  - "NIC failure"
+  - "could not resolve hostname"
+  - "loadbalancer"
+  - "pods restart"
+  - "revision rollout"
