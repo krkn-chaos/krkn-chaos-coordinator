@@ -404,10 +404,9 @@ def create_issues_for_gaps(
             if result:
                 logger.info("Created issue: %s", result.get("html_url"))
                 results.append(result)
+                print(f"  ✓ {gap.bug.key}: {result.get('html_url', 'created')}")
             else:
                 logger.error("Failed to create issue for %s", gap.bug.key)
-            print(
-                f"Created: {result.get('html_url', '?')}" if result else "Failed"
-            )
+                print(f"  ✗ {gap.bug.key}: failed to create issue")
 
     return results
