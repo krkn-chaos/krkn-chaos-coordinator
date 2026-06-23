@@ -397,3 +397,96 @@ class TestFakeRepoStoreRunMetrics:
         assert len(stored) == 2
         assert stored[0]["bugs_processed"] == 5
         assert stored[1]["bugs_processed"] == 12
+
+
+class TestNeo4jStoreEnvLoading:
+    def test_loads_password_from_env_via_project_dotenv(self, monkeypatch) -> None:
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+
+        def _fake_load() -> None:
+            monkeypatch.setenv("NEO4J_PASSWORD", "from-dotenv")
+
+        monkeypatch.setattr(
+            "src.knowledge.neo4j_store.load_project_env",
+            _fake_load,
+        )
+
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore()
+        assert store._password == "from-dotenv"
+
+    def test_explicit_password_overrides_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("NEO4J_PASSWORD", "from-env")
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore(password="explicit")
+        assert store._password == "explicit"
+
+    def test_query_requires_connect(self, monkeypatch) -> None:
+        monkeypatch.setenv("NEO4J_PASSWORD", "test")
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore()
+        with pytest.raises(RuntimeError, match="connect"):
+            store.query("MATCH (n) RETURN n LIMIT 1")
+
+
+class TestNeo4jStoreSchema:
+    def test_describe_schema_lists_bug_properties(self) -> None:
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        schema = Neo4jStore.describe_schema()
+        assert "chaos_relevant" in schema["nodes"]["Bug"]
+        assert "skip_reason" in schema["nodes"]["Bug"]
+        assert "is_chaos_relevant" in schema["invalid_property_names"]
+        assert schema["method_aliases"]["run_query"] == "query"
+
+    @pytest.mark.parametrize(
+        "alias",
+        ["run_query", "execute_query", "execute", "run_cypher", "cypher_query"],
+    )
+    def test_query_aliases_forward_to_query(self, alias: str, monkeypatch) -> None:
+        monkeypatch.setenv("NEO4J_PASSWORD", "test")
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore()
+        captured: list[str] = []
+
+        def fake_query(cypher: str, **params) -> list[dict]:
+            captured.append(cypher)
+            return []
+
+        monkeypatch.setattr(store, "query", fake_query)
+        getattr(store, alias)("MATCH (n) RETURN n LIMIT 1")
+        assert captured == ["MATCH (n) RETURN n LIMIT 1"]
+
+    def test_helper_method_aliases(self, monkeypatch) -> None:
+        monkeypatch.setenv("NEO4J_PASSWORD", "test")
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore()
+        monkeypatch.setattr(store, "get_skipped_bugs", lambda: [{"key": "X"}])
+        monkeypatch.setattr(store, "get_chaos_relevant_bugs", lambda: [{"key": "Y"}])
+        assert store.get_filtered_bugs() == [{"key": "X"}]
+        assert store.get_chaos_bugs() == [{"key": "Y"}]
+        assert Neo4jStore.get_schema() == Neo4jStore.describe_schema()
+
+    def test_get_skipped_bugs_uses_chaos_relevant_property(self, monkeypatch) -> None:
+        monkeypatch.setenv("NEO4J_PASSWORD", "test")
+        from src.knowledge.neo4j_store import Neo4jStore
+
+        store = Neo4jStore()
+        store._driver = object()  # satisfy connect check without real Neo4j
+        captured: list[str] = []
+
+        def fake_query(cypher: str, **params) -> list[dict]:
+            captured.append(cypher)
+            return []
+
+        monkeypatch.setattr(store, "query", fake_query)
+        store.get_skipped_bugs()
+        assert captured
+        assert "chaos_relevant = false" in captured[0]
+        assert "skip_reason" in captured[0]
+        assert "is_chaos_relevant" not in captured[0]
